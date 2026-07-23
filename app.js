@@ -2,7 +2,7 @@ const STORAGE_KEY = "junkshop-mvp-state-v1";
 
 const roles = {
   admin: "Admin",
-  staff: "Branch Staff",
+  staff: "Staff",
   payroll: "Payroll/Admin Staff",
 };
 
@@ -14,11 +14,11 @@ const translations = {
     "Attendance": "Attendance",
     "Review Attendance": "Review Attendance",
     "Transactions": "Transaksyon",
+    "Cash Operation": "Cash Operation",
     "Inventory": "Imbentaryo",
     "Deliveries": "Delivery",
     "Customers/Suppliers": "Customer/Supplier",
     "Materials/Prices": "Materyales/Presyo",
-    "Branches": "Mga Branch",
     "Employee Maintenance": "Employee Maintenance",
     "Payroll": "Payroll",
     "Reports": "Reports",
@@ -26,20 +26,17 @@ const translations = {
     "Log out": "Mag-log out",
     "Reset demo data": "I-reset ang demo data",
     "Good day": "Magandang araw",
-    "Here is today's branch summary": "Narito ang buod ng branch ngayong araw",
+    "Here is today's operations summary": "Narito ang buod ng operasyon ngayong araw",
     "Operational summary for branches, stock, payments, deliveries, and fast-moving materials.": "Buod ng operasyon para sa branch, stock, bayad, delivery, at mabilis maubos na materyales.",
     "Clock in or clock out with a photo shot for attendance proof.": "Mag-clock in o clock out gamit ang litrato bilang attendance proof.",
     "Current list of employees who are on duty.": "Listahan ng mga empleyadong kasalukuyang naka-duty.",
     "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.": "Mag-record ng purchases at sales. Gamitin ang Edit transaction para baguhin ang dating transaksyon.",
     "Current stock is calculated from all stock movement records.": "Ang kasalukuyang stock ay kinukuha mula sa lahat ng stock movement records.",
-    "Track truck loads, source branch stock out, receiving branch stock in, and completion status.": "I-monitor ang karga ng truck, bawas stock sa source branch, dagdag stock sa receiving branch, at status.",
     "Searchable master list for transaction history.": "Searchable master list para sa transaction history.",
     "Admin-managed buying and selling prices. Transactions keep the price used at the time.": "Admin ang namamahala ng buying at selling prices. Naka-save sa transaction ang ginamit na presyo.",
-    "Admin setup for multi-branch tracking and consolidated reporting.": "Admin setup para sa multi-branch tracking at consolidated reports.",
     "Maintain employee payroll details, government numbers, benefits, start date, and years of service.": "I-maintain ang employee payroll details, government numbers, benefits, start date, at years of service.",
     "Manage employees, cash advances, and payroll net pay calculations.": "I-manage ang employees, cash advances, at payroll net pay calculations.",
     "Filter by date and branch, export operational reports, and restrict income reports to admin users.": "I-filter ayon sa date at branch, mag-export ng reports, at admin lang ang income reports.",
-    "Admin user management for role-based access and branch assignment.": "Admin user management para sa role-based access at branch assignment.",
     "Total purchases today": "Purchases ngayong araw",
     "Total sales today": "Sales ngayong araw",
     "Current inventory value": "Halaga ng inventory",
@@ -48,7 +45,15 @@ const translations = {
     "Payroll summary": "Payroll summary",
     "Income summary": "Income summary",
     "Fast-moving scrap materials": "Mabilis gumalaw na scrap",
-    "Current stock per branch": "Stock bawat branch",
+    "Capital for today": "Capital ngayong araw",
+    "Opening cash": "Opening cash",
+    "Close cash": "Close cash",
+    "Expected cash": "Expected cash",
+    "Cash variance": "Cash variance",
+    "Cash spent on purchases": "Cash na ginastos sa purchases",
+    "Cash received from sales": "Cash na natanggap sa sales",
+    "Remaining operating cash": "Natitirang operating cash",
+    "Initial amount": "Initial amount",
     "Action": "Aksyon",
     "Date": "Petsa",
     "Branch": "Branch",
@@ -122,6 +127,7 @@ const navIcons = {
   dashboard: "grid",
   attendance: "camera",
   reviewAttendance: "clipboard",
+  cashOperation: "wallet",
   transactions: "plus",
   inventory: "boxes",
   deliveries: "truck",
@@ -168,7 +174,13 @@ const seedState = {
   editingMaterialId: null,
   editingUserId: null,
   editingEmployeeId: null,
+  editingPayrollId: null,
+  repeatTransactionPartyId: "",
+  repeatDeliveryId: "",
   attendanceRecords: [],
+  dailyCapitals: [
+    { id: "cap1", date: today(), branchId: "b1", amount: 10000, notes: "Opening capital for today", createdBy: "u1" },
+  ],
   branches: [
     { id: "b1", name: "Main Yard", code: "MAIN", address: "National Road", contact: "0917 100 0001", status: "active" },
     { id: "b2", name: "North Branch", code: "NORTH", address: "North Market", contact: "0917 100 0002", status: "active" },
@@ -233,6 +245,7 @@ function loadState() {
     reportFilters: { ...seedState.reportFilters, ...(parsed.reportFilters || {}) },
     language: parsed.language || "en",
     attendanceRecords: parsed.attendanceRecords || [],
+    dailyCapitals: parsed.dailyCapitals || [],
     employees: (parsed.employees || seedState.employees).map((employee) => ({
       sssNo: "",
       pagibigNo: "",
@@ -273,7 +286,13 @@ function isPayroll() {
 
 function visibleBranches() {
   const user = currentUser();
-  return isAdmin() ? state.branches : state.branches.filter((branch) => branch.id === user.branchId);
+  const branchId = defaultBranchId();
+  return state.branches.filter((branch) => branch.id === branchId || (!branchId && branch.status === "active")).slice(0, 1);
+}
+
+function defaultBranchId() {
+  const user = currentUser();
+  return user?.branchId || state.branches.find((branch) => branch.status === "active")?.id || state.branches[0]?.id || "";
 }
 
 function branchName(branchId) {
@@ -295,9 +314,8 @@ function stockFor(branchId, materialId) {
 }
 
 function branchFilter(records, field = "branchId") {
-  if (isAdmin()) return records;
-  const user = currentUser();
-  return records.filter((record) => record[field] === user.branchId);
+  const branchId = defaultBranchId();
+  return records.filter((record) => record[field] === branchId);
 }
 
 function render() {
@@ -316,10 +334,10 @@ function loginView() {
           <p>Manage buying, selling, inventory, deliveries, attendance, payroll, and reports from one clean green operations hub.</p>
           <div class="landing-actions">
             <a href="#login" class="btn hero-btn">Open operations</a>
-            <span>Built for multi-branch junkshop teams</span>
+            <span>Built for focused junkshop operations</span>
           </div>
           <div class="hero-metrics">
-            ${metric("Branch stock", "Live")}
+            ${metric("Stock", "Live")}
             ${metric("Receipt", "Ready")}
             ${metric("Attendance", "Photo")}
           </div>
@@ -346,18 +364,18 @@ function shell(user) {
     ["dashboard", "Dashboard"],
     ["attendance", "Attendance"],
     ["reviewAttendance", "Review Attendance"],
+    ["cashOperation", "Cash Operation"],
     ["transactions", "Transactions"],
     ["inventory", "Inventory"],
     ["deliveries", "Deliveries"],
     ["parties", "Customers/Suppliers"],
     ["materials", "Materials/Prices"],
-    ["branches", "Branches"],
     ["employees", "Employee Maintenance"],
     ["payroll", "Payroll"],
     ["reports", "Reports"],
     ["users", "Users"],
   ].filter(([view]) => {
-    if (["users", "branches", "materials"].includes(view)) return isAdmin();
+    if (["users", "materials"].includes(view)) return isAdmin();
     if (["payroll", "employees"].includes(view)) return isPayroll();
     return true;
   });
@@ -382,7 +400,7 @@ function shell(user) {
           </div>
           <div class="user-box">
             <span class="avatar">${user.name.slice(0, 1).toUpperCase()}</span>
-            <span><strong>${user.name}</strong><small>${roles[user.role]} - ${branchName(user.branchId)}</small></span>
+            <span><strong>${user.name}</strong><small>${roles[user.role]}</small></span>
           </div>
           <button class="logout" data-action="logout">${icon("logout")}<span>${t("Log out")}</span></button>
         </div>
@@ -397,12 +415,12 @@ function viewContent() {
     dashboard: dashboardView,
     attendance: attendanceView,
     reviewAttendance: reviewAttendanceView,
+    cashOperation: cashOperationView,
     transactions: transactionsView,
     inventory: inventoryView,
     deliveries: deliveriesView,
     parties: partiesView,
     materials: materialsView,
-    branches: branchesView,
     employees: employeesView,
     payroll: payrollView,
     reports: reportsView,
@@ -414,7 +432,7 @@ function viewContent() {
 function page(title, subtitle, body) {
   return `
     <div class="topbar">
-      <div><h2>${state.activeView === "dashboard" ? `${t("Good day")}, ${currentUser().name}!` : t(title)}</h2><p>${state.activeView === "dashboard" ? t("Here is today's branch summary") : t(subtitle)}</p></div>
+      <div><h2>${state.activeView === "dashboard" ? `${t("Good day")}, ${currentUser().name}!` : t(title)}</h2><p>${state.activeView === "dashboard" ? t("Here is today's operations summary") : t(subtitle)}</p></div>
       <button class="btn secondary" data-action="reset-demo">${t("Reset demo data")}</button>
     </div>
     ${body}
@@ -432,18 +450,20 @@ function dashboardView() {
   }, 0);
   const activeDeliveries = state.deliveries.filter((delivery) => delivery.status === "in_transit").length;
   const payroll = state.payrollRuns.reduce((sum, run) => sum + run.netPay, 0);
+  const dashboardCash = cashPosition(currentCapitalBranchId());
   const profit = transactions.reduce((sum, tx) => {
     const material = state.materials.find((item) => item.id === tx.materialId);
     if (tx.type !== "sale" || !material) return sum;
     return sum + tx.weight * (tx.price - material.buyPrice);
   }, 0);
 
-  return page("Dashboard", "Operational summary for branches, stock, payments, deliveries, and fast-moving materials.", `
+  return page("Dashboard", "Operational summary for stock, payments, deliveries, and fast-moving materials.", `
     <section class="grid cards">
       ${metric("Total purchases today", money(purchases))}
       ${metric("Total sales today", money(sales))}
       ${metric("Current inventory value", money(inventoryValue))}
       ${metric("Pending payments", money(pending))}
+      ${metric("Remaining operating cash", money(dashboardCash.remaining))}
       ${metric("Deliveries in progress", activeDeliveries)}
       ${metric("Payroll summary", money(payroll))}
       ${isAdmin() ? metric("Income summary", money(profit)) : ""}
@@ -454,7 +474,7 @@ function dashboardView() {
         ${barChart(materialMovement())}
       </div>
       <div class="panel">
-        <div class="panel-head"><h3>Current stock per branch</h3></div>
+        <div class="panel-head"><h3>Current stock</h3></div>
         ${stockTable()}
       </div>
     </section>
@@ -489,10 +509,45 @@ function stockTable() {
   const rows = [];
   visibleBranches().forEach((branch) => {
     state.materials.forEach((material) => {
-      rows.push(`<tr><td>${branch.name}</td><td>${material.name}</td><td class="num">${kg(stockFor(branch.id, material.id))}</td><td class="amount">${money(stockFor(branch.id, material.id) * material.sellPrice)}</td></tr>`);
+      const currentStock = stockFor(branch.id, material.id);
+      rows.push(`<tr><td>${material.name}</td><td class="num">${kg(currentStock)}</td><td class="amount">${money(currentStock * material.sellPrice)}</td><td>${branch.name}</td></tr>`);
     });
   });
-  return table(["Branch", "Material", "Current Stock", "Estimated Value"], rows);
+  return table(["Material", "Current Stock", "Estimated Value", "Location"], rows);
+}
+
+function capitalFor(branchId, date = today()) {
+  return state.dailyCapitals
+    .filter((capital) => capital.branchId === branchId && capital.date === date)
+    .reduce((sum, capital) => sum + Number(capital.openingCash ?? capital.amount ?? 0), 0);
+}
+
+function cashPosition(branchId, date = today()) {
+  const transactions = state.transactions.filter((tx) => tx.branchId === branchId && tx.date === date);
+  const cashRecord = cashOperationRecord(branchId, date);
+  const capital = capitalFor(branchId, date);
+  const cashSpent = transactions.filter((tx) => tx.type === "purchase").reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
+  const cashReceived = transactions.filter((tx) => tx.type === "sale").reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
+  const expectedCash = capital - cashSpent + cashReceived;
+  const closeCash = cashRecord?.closeCash === "" || cashRecord?.closeCash == null ? null : Number(cashRecord.closeCash);
+  return {
+    capital,
+    cashSpent,
+    cashReceived,
+    remaining: expectedCash,
+    expectedCash,
+    closeCash,
+    variance: closeCash == null ? null : closeCash - expectedCash,
+    record: cashRecord,
+  };
+}
+
+function currentCapitalBranchId() {
+  return defaultBranchId();
+}
+
+function cashOperationRecord(branchId, date = today()) {
+  return state.dailyCapitals.find((capital) => capital.branchId === branchId && capital.date === date) || null;
 }
 
 function attendanceView() {
@@ -505,7 +560,7 @@ function attendanceView() {
         <div class="panel-head"><h3>${openRecord ? "Clock out" : "Clock in"}</h3></div>
         <div class="grid cards">
           ${metric("User", user.name)}
-          ${metric("Branch", branchName(user.branchId))}
+          ${metric("Operation", "Today")}
           ${metric("Status", openRecord ? "On duty" : "Off duty")}
           ${openRecord ? metric("Clock in time", timeLabel(openRecord.clockInAt)) : ""}
         </div>
@@ -531,8 +586,85 @@ function attendanceView() {
   `);
 }
 
+function cashOperationView() {
+  const branchId = currentCapitalBranchId();
+  const record = cashOperationRecord(branchId);
+  const position = cashPosition(branchId);
+  const openingStarted = position.capital > 0 || Boolean(record);
+  const txRows = state.transactions
+    .filter((tx) => tx.branchId === branchId && tx.date === today())
+    .slice()
+    .reverse()
+    .map((tx) => `
+      <tr><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td></tr>
+    `);
+  return page("Cash Operation", "Input opening cash before starting operations, close cash at end of day, and tally sales and expenses.", `
+    <section class="grid">
+      <section class="cash-shift">
+        ${startingAmountForm(record, branchId)}
+        ${closeOperationForm(record, branchId, position, openingStarted)}
+      </section>
+      <div class="panel">
+        <div class="panel-head"><h3>Today transaction tally</h3></div>
+        ${table(["No.", "Type", "Name", "Material", "Total", "Cash Paid"], txRows)}
+      </div>
+    </section>
+  `);
+}
+
+function startingAmountForm(record, branchId) {
+  const openingCash = record?.openingCash ?? record?.amount ?? "";
+  return `
+    <form class="panel shift-card starting-card" data-action="save-cash-operation">
+      <div class="panel-head"><h3>Starting amount</h3><span class="shift-status">${record ? "Opened" : "Before operation"}</span></div>
+      <p class="shift-copy">Specify cash amount at the beginning of operation.</p>
+      <input type="hidden" name="date" value="${record?.date || today()}">
+      ${branchSelect("branchId", "Branch", false, record?.branchId || branchId)}
+      <input type="hidden" name="closeCash" value="${record?.closeCash ?? ""}">
+      <label>Amount<input class="cash-amount-input" name="openingCash" type="number" value="${openingCash}" step="0.01" min="0" required></label>
+      <label style="margin-top:10px">Notes<textarea name="notes" placeholder="Opening fund notes">${record?.notes || ""}</textarea></label>
+      <button class="btn shift-action" type="submit">${record ? "Update starting amount" : "Open operation"}</button>
+    </form>
+  `;
+}
+
+function closeOperationForm(record, branchId, position, openingStarted) {
+  return `
+    <form class="panel shift-card" data-action="save-cash-operation">
+      <div class="panel-head">
+        <h3>Close operation</h3>
+        <button class="btn secondary" type="button" data-print-cash-operation="${branchId}">Print receipt</button>
+      </div>
+      <input type="hidden" name="date" value="${record?.date || today()}">
+      ${branchSelect("branchId", "Branch", false, record?.branchId || branchId)}
+      <input type="hidden" name="openingCash" value="${record?.openingCash ?? record?.amount ?? 0}">
+      <label>Close cash<input class="cash-amount-input" name="closeCash" type="number" value="${record?.closeCash ?? ""}" step="0.01" min="0" ${openingStarted ? "" : "disabled"}></label>
+      <input type="hidden" name="notes" value="${escapeHtml(record?.notes || "")}">
+      <div class="cash-lines">
+        ${cashSummaryRows(position)}
+      </div>
+      <button class="btn shift-action" type="submit" ${openingStarted ? "" : "disabled"}>Close operation</button>
+      ${openingStarted ? "" : `<div class="notice" style="margin-top:12px">Enter the starting amount first before closing the operation.</div>`}
+    </form>
+  `;
+}
+
+function cashSummaryRows(position) {
+  return [
+    ["Shift beginning", timeLabel(new Date().toISOString())],
+    ["Starting cash", money(position.capital)],
+    ["Cash payments", money(position.cashReceived)],
+    ["Cash purchases", money(position.cashSpent)],
+    ["Paid in", money(0)],
+    ["Paid out", money(position.cashSpent)],
+    ["Expected amount of cash", money(position.expectedCash), true],
+    ["Ending balance", position.closeCash == null ? "Not closed" : money(position.closeCash), true],
+    ["Variance", position.variance == null ? "Not closed" : money(position.variance)],
+  ].map(([label, value, strong]) => `<div class="cash-line ${strong ? "strong" : ""}"><span>${label}</span><strong>${value}</strong></div>`).join("");
+}
+
 function reviewAttendanceView() {
-  const records = activeAttendanceRecords().filter((record) => isAdmin() || isPayroll() || record.branchId === currentUser().branchId);
+  const records = activeAttendanceRecords().filter((record) => record.branchId === defaultBranchId());
   return page("Review Attendance", "Current list of employees who are on duty.", `
     <section class="panel">
       <div class="panel-head"><h3>On duty now</h3></div>
@@ -542,8 +674,8 @@ function reviewAttendanceView() {
 }
 
 function attendanceTable(records) {
-  return table(["Employee", "Branch", "Clock In", "Clock Out", "Status", "Photo"], records.slice().reverse().map((record) => `
-    <tr><td>${record.userName}</td><td>${branchName(record.branchId)}</td><td>${timeLabel(record.clockInAt)}</td><td>${record.clockOutAt ? timeLabel(record.clockOutAt) : ""}</td><td>${badge(record.clockOutAt ? "completed" : "active")}</td><td>${record.clockInPhoto ? `<img class="thumb" src="${record.clockOutPhoto || record.clockInPhoto}" alt="Attendance photo">` : ""}</td></tr>
+  return table(["Employee", "Clock In", "Clock Out", "Status", "Photo"], records.slice().reverse().map((record) => `
+    <tr><td>${record.userName}</td><td>${timeLabel(record.clockInAt)}</td><td>${record.clockOutAt ? timeLabel(record.clockOutAt) : ""}</td><td>${badge(record.clockOutAt ? "completed" : "active")}</td><td>${record.clockInPhoto ? `<img class="thumb" src="${record.clockOutPhoto || record.clockInPhoto}" alt="Attendance photo">` : ""}</td></tr>
   `));
 }
 
@@ -558,26 +690,47 @@ function timeLabel(value) {
 function printReceipt(transactionId) {
   const tx = state.transactions.find((item) => item.id === transactionId);
   if (!tx) return;
+  printTransactionReceipt([tx], tx.number);
+}
+
+function printCustomerReceipt(partyId) {
+  const transactions = branchFilter(state.transactions).filter((tx) => tx.partyId === partyId);
+  if (!transactions.length) return;
+  printTransactionReceipt(transactions, `CUSTOMER-${partyId}`);
+}
+
+function operatorName(userId) {
+  return state.users.find((user) => user.id === userId)?.name || currentUser()?.name || "Unknown";
+}
+
+function printTransactionReceipt(transactions, receiptNumber) {
   const receiptWindow = window.open("", "_blank", "width=420,height=720");
   if (!receiptWindow) {
     alert("Please allow pop-ups to print the receipt.");
     return;
   }
-  receiptWindow.document.write(receiptHtml(tx));
+  receiptWindow.document.write(receiptHtml(transactions, receiptNumber));
   receiptWindow.document.close();
   receiptWindow.focus();
 }
 
-function receiptHtml(tx) {
+function receiptHtml(transactions, receiptNumber = null) {
+  const rows = Array.isArray(transactions) ? transactions : [transactions];
+  const tx = rows[0];
   const branch = state.branches.find((item) => item.id === tx.branchId);
   const cashier = state.users.find((user) => user.id === tx.createdBy) || currentUser();
-  const transactionType = tx.type === "purchase" ? "Purchase" : "Sale";
+  const transactionType = rows.every((item) => item.type === tx.type) ? (tx.type === "purchase" ? "Purchase" : "Sale") : "Mixed";
+  const total = rows.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const paid = rows.reduce((sum, item) => sum + Number(item.paid || 0), 0);
+  const balance = rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
+  const paymentStatus = balance <= 0 ? "paid" : paid <= 0 ? "unpaid" : "partial";
+  const number = receiptNumber || tx.number;
   return `
     <!doctype html>
     <html>
       <head>
         <meta charset="UTF-8">
-        <title>Receipt ${tx.number}</title>
+        <title>Receipt ${number}</title>
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
@@ -621,7 +774,7 @@ function receiptHtml(tx) {
             <div class="muted">${escapeHtml(branch?.contact || "")}</div>
           </div>
           <div class="line"></div>
-          <div class="row"><span>Receipt No.</span><strong>${escapeHtml(tx.number)}</strong></div>
+          <div class="row"><span>Receipt No.</span><strong>${escapeHtml(number)}</strong></div>
           <div class="row"><span>Date</span><strong>${escapeHtml(tx.date)}</strong></div>
           <div class="row"><span>Cashier</span><strong>${escapeHtml(cashier?.name || "Unknown")}</strong></div>
           <div class="row"><span>Branch</span><strong>${escapeHtml(branch?.name || "Unknown")}</strong></div>
@@ -631,23 +784,333 @@ function receiptHtml(tx) {
           <table>
             <thead><tr><th>Material</th><th>Kg</th><th>Price</th><th>Total</th></tr></thead>
             <tbody>
-              <tr>
-                <td>${escapeHtml(materialName(tx.materialId))}</td>
-                <td>${Number(tx.weight).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</td>
-                <td>${money(tx.price)}</td>
-                <td>${money(tx.total)}</td>
-              </tr>
+              ${rows.map((item) => `
+                <tr>
+                  <td>${escapeHtml(materialName(item.materialId))}</td>
+                  <td>${Number(item.weight).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</td>
+                  <td>${money(item.price)}</td>
+                  <td>${money(item.total)}</td>
+                </tr>
+              `).join("")}
             </tbody>
           </table>
           <div class="line"></div>
-          <div class="row total"><span>Total</span><strong>${money(tx.total)}</strong></div>
-          <div class="row"><span>Amount paid</span><strong>${money(tx.paid)}</strong></div>
-          <div class="row"><span>Balance</span><strong>${money(tx.balance)}</strong></div>
-          <div class="row"><span>Payment status</span><strong>${escapeHtml(tx.paymentStatus)}</strong></div>
+          <div class="row total"><span>Total</span><strong>${money(total)}</strong></div>
+          <div class="row"><span>Amount paid</span><strong>${money(paid)}</strong></div>
+          <div class="row"><span>Balance</span><strong>${money(balance)}</strong></div>
+          <div class="row"><span>Payment status</span><strong>${escapeHtml(paymentStatus)}</strong></div>
           ${tx.notes ? `<div class="line"></div><div class="muted">Notes: ${escapeHtml(tx.notes)}</div>` : ""}
           <div class="line"></div>
-          ${barcode(tx.number)}
+          ${barcode(number)}
           <div class="center muted" style="margin-top:12px">Thank you.</div>
+        </section>
+      </body>
+    </html>
+  `;
+}
+
+function printCashOperation(branchId) {
+  const receiptWindow = window.open("", "_blank", "width=460,height=760");
+  if (!receiptWindow) {
+    alert("Please allow pop-ups to print the cash operation receipt.");
+    return;
+  }
+  receiptWindow.document.write(cashOperationReceiptHtml(branchId, today()));
+  receiptWindow.document.close();
+  receiptWindow.focus();
+}
+
+function printDelivery(deliveryId) {
+  const delivery = state.deliveries.find((item) => item.id === deliveryId);
+  if (!delivery) return;
+  const receiptWindow = window.open("", "_blank", "width=460,height=760");
+  if (!receiptWindow) {
+    alert("Please allow pop-ups to print the delivery record.");
+    return;
+  }
+  receiptWindow.document.write(deliveryReceiptHtml(delivery));
+  receiptWindow.document.close();
+  receiptWindow.focus();
+}
+
+function deliveryReceiptHtml(delivery) {
+  const branch = state.branches.find((item) => item.id === delivery.sourceBranchId);
+  const operator = operatorName(delivery.createdBy || delivery.updatedBy);
+  const lines = deliveryLines(delivery);
+  const loadedTotal = lines.reduce((sum, line) => sum + Number(line.loadedWeight || 0), 0);
+  const deliveredTotal = lines.reduce((sum, line) => sum + Number(line.deliveredWeight || 0), 0);
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Delivery ${delivery.number}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
+          .receipt { width: 360px; margin: 18px auto; padding: 18px; background: #fff; border: 1px solid #d1d5db; }
+          .center { text-align: center; }
+          h1 { margin: 0; font-size: 24px; }
+          .tagline { margin: 3px 0 12px; font-size: 11px; color: #4b5563; }
+          .muted { color: #4b5563; font-size: 12px; }
+          .line { border-top: 1px dashed #9ca3af; margin: 12px 0; }
+          .row { display: flex; justify-content: space-between; gap: 12px; margin: 7px 0; font-size: 13px; }
+          .row strong:last-child, .amount { text-align: right; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+          th, td { padding: 6px 0; border-bottom: 1px solid #e5e7eb; text-align: left; }
+          th:last-child, td:last-child { text-align: right; }
+          .total { font-size: 16px; font-weight: 800; }
+          .barcode { display: flex; justify-content: center; align-items: end; gap: 2px; height: 58px; margin-top: 12px; }
+          .barcode span { display: block; height: 48px; background: #111827; }
+          .code { margin-top: 6px; letter-spacing: 2px; font-size: 12px; }
+          .receipt-actions { width: 360px; margin: 18px auto 0; display: flex; gap: 8px; }
+          .receipt-actions button { flex: 1; min-height: 42px; border: 0; border-radius: 6px; font-size: 14px; font-weight: 800; cursor: pointer; }
+          .print-btn { background: #16834f; color: #fff; }
+          .close-btn { background: #e5e7eb; color: #111827; }
+          @media print {
+            body { background: #fff; }
+            .receipt { width: 76mm; margin: 0; border: 0; }
+            .receipt-actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt-actions">
+          <button class="print-btn" onclick="window.print()">Print delivery</button>
+          <button class="close-btn" onclick="window.close()">Close</button>
+        </div>
+        <section class="receipt">
+          <div class="center">
+            <h1>ScrapWise</h1>
+            <div class="tagline">Turn every kilo into clear business insight.</div>
+            <div class="muted">${escapeHtml(branch?.name || "Main operation")}</div>
+          </div>
+          <div class="line"></div>
+          <div class="row"><span>Delivery No.</span><strong>${escapeHtml(delivery.number)}</strong></div>
+          <div class="row"><span>Date</span><strong>${escapeHtml(delivery.date)}</strong></div>
+          <div class="row"><span>Operator</span><strong>${escapeHtml(operator)}</strong></div>
+          <div class="row"><span>Truck plate</span><strong>${escapeHtml(delivery.truck)}</strong></div>
+          <div class="row"><span>Driver</span><strong>${escapeHtml(delivery.driver)}</strong></div>
+          <div class="row"><span>Destination</span><strong>${escapeHtml(delivery.destinationName || "External")}</strong></div>
+          <div class="row"><span>Status</span><strong>${escapeHtml(delivery.status)}</strong></div>
+          <div class="line"></div>
+          <table>
+            <thead><tr><th>Material</th><th>Loaded</th><th>Delivered</th></tr></thead>
+            <tbody>
+              ${lines.map((line) => `
+                <tr><td>${escapeHtml(materialName(line.materialId))}</td><td>${kg(line.loadedWeight)}</td><td>${kg(line.deliveredWeight)}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+          <div class="line"></div>
+          <div class="row total"><span>Total loaded</span><strong>${kg(loadedTotal)}</strong></div>
+          <div class="row"><span>Total delivered</span><strong>${kg(deliveredTotal)}</strong></div>
+          ${delivery.notes ? `<div class="line"></div><div class="muted">Notes: ${escapeHtml(delivery.notes)}</div>` : ""}
+          <div class="line"></div>
+          ${barcode(delivery.number)}
+        </section>
+      </body>
+    </html>
+  `;
+}
+
+function printPayroll(payrollId) {
+  const run = state.payrollRuns.find((item) => item.id === payrollId);
+  if (!run) return;
+  const receiptWindow = window.open("", "_blank", "width=760,height=840");
+  if (!receiptWindow) {
+    alert("Please allow pop-ups to print the payslip.");
+    return;
+  }
+  receiptWindow.document.write(payrollReceiptHtml(run));
+  receiptWindow.document.close();
+  receiptWindow.focus();
+}
+
+function payrollReceiptHtml(run) {
+  const employee = state.employees.find((item) => item.id === run.employeeId) || {};
+  const totals = payrollTotals(run);
+  const incomeRows = [
+    ["Bi-monthly Salary", "", run.basicPay],
+    ["Adjustment", "", run.adjustment],
+    ["Night Differential", run.nightDiffHours, run.nightDiffAmount],
+    ["Regular Overtime", run.overtimeHours, run.overtimeAmount],
+    ["Rest Day", run.restDayHours, run.restDayAmount],
+    ["Special Holiday", run.specialHolidayHours, run.specialHolidayAmount],
+    ["Regular Holiday", run.regularHolidayHours, run.regularHolidayAmount],
+    ["Taxable Allowance", "", run.taxableAllowance],
+    ["Incentives", "", run.incentives],
+    ["Commission", "", run.commission],
+    ["Transpo Allowance", "", run.transpoAllowance],
+    ["Clothing Allowance", "", run.clothingAllowance],
+    ["Meal Allowance", "", run.mealAllowance],
+    ["NTA", "", run.nta],
+    ["Bonus", "", run.bonus],
+  ].filter((row) => Number(row[2] || 0) !== 0 || Number(row[1] || 0) !== 0);
+  const deductionRows = [
+    ["Late (mins)", run.lateMins, run.lateDeduction],
+    ["Absent (days)", run.absentDays, run.absentDeduction],
+    ["HMO", "", run.hmo],
+    ["SSS", "", run.sss],
+    ["SSS MPF", "", run.sssMpf],
+    ["PhilHealth", "", run.philHealth],
+    ["HDMF", "", run.hdmf],
+    ["SSS Salary Loan", "", run.sssSalaryLoan],
+    ["SSS Calamity Loan", "", run.sssCalamityLoan],
+    ["HDMF MPL", "", run.hdmfMpl],
+    ["HDMF Calamity Loan", "", run.hdmfCalamityLoan],
+    ["Company Loan", "", run.companyLoan],
+    ["Tax Withheld/Refund", "", run.tax],
+    ["Cash Advance", "", run.cashAdvanceDeduction],
+  ].filter((row) => Number(row[2] || 0) !== 0 || Number(row[1] || 0) !== 0);
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Payslip ${employee.name || ""} ${run.period}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
+          .payslip { width: 720px; margin: 18px auto; background: #fff; border: 2px solid #111827; }
+          .head { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #111827; }
+          h1, h2 { margin: 0; }
+          h1 { font-size: 22px; }
+          h2 { font-size: 30px; letter-spacing: .04em; }
+          .muted { font-size: 12px; color: #374151; }
+          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; padding: 10px 14px; font-size: 13px; }
+          .row { display: flex; justify-content: space-between; gap: 12px; }
+          .grid2 { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #111827; }
+          .section:first-child { border-right: 1px solid #111827; }
+          .section-title { background: #d9d9d9; text-align: center; font-weight: 800; padding: 4px; border-bottom: 1px solid #111827; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th, td { padding: 4px 6px; text-align: left; }
+          th { font-style: italic; font-weight: 500; }
+          td.amount, th.amount { text-align: right; }
+          .footer { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid #111827; font-weight: 900; }
+          .footer div { padding: 6px; border-right: 1px solid #111827; text-align: center; }
+          .footer div:last-child { border-right: 0; }
+          .receipt-actions { width: 720px; margin: 18px auto 0; display: flex; gap: 8px; }
+          .receipt-actions button { flex: 1; min-height: 42px; border: 0; border-radius: 6px; font-size: 14px; font-weight: 800; cursor: pointer; }
+          .print-btn { background: #16834f; color: #fff; }
+          .close-btn { background: #e5e7eb; color: #111827; }
+          @media print {
+            body { background: #fff; }
+            .payslip { width: 100%; margin: 0; }
+            .receipt-actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt-actions">
+          <button class="print-btn" onclick="window.print()">Print payslip</button>
+          <button class="close-btn" onclick="window.close()">Close</button>
+        </div>
+        <section class="payslip">
+          <div class="head">
+            <div>
+              <h1>ScrapWise</h1>
+              <div class="muted">Turn every kilo into clear business insight.</div>
+              <div class="muted">Operator: ${escapeHtml(operatorName(run.createdBy || run.updatedBy))}</div>
+            </div>
+            <h2>PAYSLIP</h2>
+          </div>
+          <div class="meta">
+            <div class="row"><span>Payroll Period:</span><strong>${escapeHtml(run.period || "")}</strong></div>
+            <div class="row"><span>Pay Date:</span><strong>${escapeHtml(run.payDate || "")}</strong></div>
+            <div class="row"><span>Employee ID:</span><strong>${escapeHtml(employee.id || "")}</strong></div>
+            <div class="row"><span>Department:</span><strong>${escapeHtml(run.department || "")}</strong></div>
+            <div class="row"><span>Employee Name:</span><strong>${escapeHtml(employee.name || "")}</strong></div>
+            <div class="row"><span>Position:</span><strong>${escapeHtml(employee.position || "")}</strong></div>
+            <div class="row"><span>Date Hired:</span><strong>${escapeHtml(employee.startDate || "")}</strong></div>
+            <div class="row"><span>Basic Salary:</span><strong>${money(run.monthlySalary)}</strong></div>
+          </div>
+          <div class="grid2">
+            <div class="section">
+              <div class="section-title">Income</div>
+              <table><thead><tr><th></th><th class="amount">Hours</th><th class="amount">Amount</th></tr></thead><tbody>
+                ${incomeRows.map(([label, hours, amount]) => `<tr><td>${escapeHtml(label)}</td><td class="amount">${hours || ""}</td><td class="amount">${money(amount)}</td></tr>`).join("")}
+              </tbody></table>
+            </div>
+            <div class="section">
+              <div class="section-title">Deduction</div>
+              <table><thead><tr><th></th><th class="amount"></th><th class="amount">Amount</th></tr></thead><tbody>
+                ${deductionRows.map(([label, qty, amount]) => `<tr><td>${escapeHtml(label)}</td><td class="amount">${qty || ""}</td><td class="amount">${money(amount)}</td></tr>`).join("")}
+              </tbody></table>
+            </div>
+          </div>
+          <div class="footer">
+            <div>Total Gross Pay: ${money(totals.grossPay)}</div>
+            <div>Total Deduction: ${money(totals.totalDeduction)}</div>
+          </div>
+          <div class="footer">
+            <div>NET PAY:</div>
+            <div>${money(totals.netPay)}</div>
+          </div>
+        </section>
+      </body>
+    </html>
+  `;
+}
+
+function cashOperationReceiptHtml(branchId, date) {
+  const branch = state.branches.find((item) => item.id === branchId);
+  const position = cashPosition(branchId, date);
+  const record = cashOperationRecord(branchId, date);
+  const cashier = currentUser();
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Cash Operation ${date}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
+          .receipt { width: 340px; margin: 18px auto; padding: 18px; background: #fff; border: 1px solid #d1d5db; }
+          .center { text-align: center; }
+          h1 { margin: 0; font-size: 24px; }
+          .tagline { margin: 3px 0 12px; font-size: 11px; color: #4b5563; }
+          .muted { color: #4b5563; font-size: 12px; }
+          .line { border-top: 1px dashed #9ca3af; margin: 12px 0; }
+          .row { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; font-size: 13px; }
+          .row strong:last-child { text-align: right; }
+          .total { font-size: 16px; font-weight: 800; }
+          .receipt-actions { width: 340px; margin: 18px auto 0; display: flex; gap: 8px; }
+          .receipt-actions button { flex: 1; min-height: 42px; border: 0; border-radius: 6px; font-size: 14px; font-weight: 800; cursor: pointer; }
+          .print-btn { background: #16834f; color: #fff; }
+          .close-btn { background: #e5e7eb; color: #111827; }
+          @media print {
+            body { background: #fff; }
+            .receipt { width: 76mm; margin: 0; border: 0; }
+            .receipt-actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt-actions">
+          <button class="print-btn" onclick="window.print()">Print receipt</button>
+          <button class="close-btn" onclick="window.close()">Close</button>
+        </div>
+        <section class="receipt">
+          <div class="center">
+            <h1>ScrapWise</h1>
+            <div class="tagline">Turn every kilo into clear business insight.</div>
+            <div class="muted">${escapeHtml(branch?.name || "Unknown branch")}</div>
+            <div class="muted">${escapeHtml(date)}</div>
+          </div>
+          <div class="line"></div>
+          <div class="row"><span>Prepared by</span><strong>${escapeHtml(cashier?.name || "Unknown")}</strong></div>
+          <div class="row"><span>Opening cash</span><strong>${money(position.capital)}</strong></div>
+          <div class="row"><span>Sales cash received</span><strong>${money(position.cashReceived)}</strong></div>
+          <div class="row"><span>Purchase cash expenses</span><strong>${money(position.cashSpent)}</strong></div>
+          <div class="line"></div>
+          <div class="row total"><span>Expected cash</span><strong>${money(position.expectedCash)}</strong></div>
+          <div class="row total"><span>Ending balance</span><strong>${position.closeCash == null ? "Not closed" : money(position.closeCash)}</strong></div>
+          <div class="row"><span>Variance</span><strong>${position.variance == null ? "Not closed" : money(position.variance)}</strong></div>
+          ${record?.notes ? `<div class="line"></div><div class="muted">Notes: ${escapeHtml(record.notes)}</div>` : ""}
+          <div class="line"></div>
+          <div class="center muted">Cash operation receipt</div>
         </section>
       </body>
     </html>
@@ -666,13 +1129,11 @@ function transactionsView() {
   const transactions = branchFilter(state.transactions);
   const editingTransaction = transactions.find((tx) => tx.id === state.editingTransactionId) || null;
   return page("Transactions", "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.", `
-    <section class="split">
+    <section class="grid">
       ${transactionForm(editingTransaction)}
       <div class="panel">
         <div class="panel-head"><h3>Recent transactions</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
-        ${table(["Action", "No.", "Date", "Branch", "Type", "Name", "Material", "Weight", "Total", "Paid", "Balance"], transactions.slice().reverse().map((tx) => `
-          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit transaction</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print receipt</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
-        `))}
+        ${customerTransactionGroups(transactions)}
       </div>
     </section>
   `);
@@ -680,6 +1141,7 @@ function transactionsView() {
 
 function transactionForm(tx = null) {
   const action = tx ? "update-transaction" : "add-transaction";
+  const selectedPartyId = tx?.partyId || state.repeatTransactionPartyId || "";
   return `
     <form class="panel" data-action="${action}" data-transaction-form>
       <div class="panel-head">
@@ -691,7 +1153,7 @@ function transactionForm(tx = null) {
         ${dateInput("date", tx?.date || today())}
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
-        ${partySelect("partyId", tx?.partyId)}
+        ${partySelect("partyId", selectedPartyId)}
         ${materialSelect("materialId", tx?.materialId)}
         ${input("weight", "Weight in kilos", "number", tx?.weight ?? "0", "0.01")}
         ${input("price", "Price per kilo", "number", tx?.price ?? "", "0.01")}
@@ -700,9 +1162,33 @@ function transactionForm(tx = null) {
       </div>
       <div class="notice" data-transaction-summary style="margin-top:12px">Total: PHP 0.00 | Balance: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${tx?.notes || ""}</textarea></label>
+      ${tx ? "" : `<label class="check-row"><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer</label>`}
       <button class="btn" type="submit" style="margin-top:12px">${tx ? "Save changes" : "Save transaction"}</button>
     </form>
   `;
+}
+
+function customerTransactionGroups(transactions) {
+  const groups = transactions.slice().reverse().reduce((items, tx) => {
+    if (!items[tx.partyId]) items[tx.partyId] = [];
+    items[tx.partyId].push(tx);
+    return items;
+  }, {});
+  const groupHtml = Object.entries(groups).map(([partyId, rows]) => {
+    const total = rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+    return `
+      <section class="customer-group">
+        <div class="customer-head">
+          <div><h3>${escapeHtml(partyName(partyId))}</h3><small>${rows.length} transaction${rows.length === 1 ? "" : "s"} - ${money(total)}</small></div>
+          <button class="btn secondary" data-print-customer-receipt="${partyId}">Print customer receipt</button>
+        </div>
+        ${table(["Action", "No.", "Date", "Type", "Material", "Weight", "Total", "Paid", "Balance"], rows.map((tx) => `
+          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+        `))}
+      </section>
+    `;
+  }).join("");
+  return groupHtml || `<div class="notice">No transactions found.</div>`;
 }
 
 function inventoryView() {
@@ -718,13 +1204,18 @@ function inventoryView() {
           <h3>Stock movements</h3>
           ${isAdmin() ? `<button class="btn warning" data-modal="adjustment">Manual adjustment</button>` : ""}
         </div>
-        ${table(["Date", "Branch", "Material", "Movement", "Quantity", "Reference", "Notes"], movements.slice().reverse().map((move) => `
-          <tr><td>${move.date}</td><td>${branchName(move.branchId)}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${move.notes || ""}</td></tr>
-        `))}
+        ${table(["Date", "Material", "Movement", "Quantity", "Reference", "Truck Plate", "Driver", "Delivery Status", "Notes"], movements.slice().reverse().map((move) => {
+          const delivery = deliveryByReference(move.reference);
+          return `<tr><td>${move.date}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${delivery?.truck || ""}</td><td>${delivery?.driver || ""}</td><td>${delivery ? badge(delivery.status) : ""}</td><td>${move.notes || ""}</td></tr>`;
+        }))}
       </div>
       ${isAdmin() ? adjustmentForm() : ""}
     </section>
   `);
+}
+
+function deliveryByReference(reference) {
+  return state.deliveries.find((delivery) => delivery.number === reference) || null;
 }
 
 function adjustmentForm() {
@@ -744,44 +1235,72 @@ function adjustmentForm() {
 }
 
 function deliveriesView() {
-  const deliveries = state.deliveries.filter((delivery) => isAdmin() || delivery.sourceBranchId === currentUser().branchId || delivery.destinationBranchId === currentUser().branchId);
+  const deliveries = state.deliveries.filter((delivery) => isAdmin() || delivery.sourceBranchId === defaultBranchId());
   const editingDelivery = deliveries.find((delivery) => delivery.id === state.editingDeliveryId) || null;
-  const rows = deliveries.slice().reverse().flatMap((delivery) => deliveryLines(delivery).map((line) => `
-    <tr class="${state.editingDeliveryId === delivery.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-delivery="${delivery.id}">Edit</button></td><td>${delivery.number}</td><td>${delivery.date}</td><td>${branchName(delivery.sourceBranchId)}</td><td>${delivery.destinationBranchId ? branchName(delivery.destinationBranchId) : delivery.destinationName}</td><td>${delivery.truck}</td><td>${delivery.driver}</td><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td>${badge(delivery.status)}</td></tr>
-  `));
-  return page("Deliveries", "Track truck loads, source branch stock out, receiving branch stock in, and completion status.", `
-    <section class="split">
+  return page("Deliveries", "Track truck loads, scrap materials, delivery destinations, and completion status.", `
+    <section class="grid">
       ${deliveryForm(editingDelivery)}
       <div class="panel">
         <div class="panel-head"><h3>Delivery records</h3><button class="btn secondary" data-export-excel="deliveries">Download Excel</button></div>
-        ${table(["Action", "No.", "Date", "Source", "Destination", "Truck", "Driver", "Material", "Loaded", "Delivered", "Status"], rows)}
+        ${deliveryRecordGroups(deliveries)}
       </div>
     </section>
   `);
 }
 
+function deliveryRecordGroups(deliveries) {
+  const groups = deliveries.slice().reverse().map((delivery) => {
+    const lines = deliveryLines(delivery);
+    const loadedTotal = lines.reduce((sum, line) => sum + Number(line.loadedWeight || 0), 0);
+    const deliveredTotal = lines.reduce((sum, line) => sum + Number(line.deliveredWeight || 0), 0);
+    return `
+      <section class="customer-group ${state.editingDeliveryId === delivery.id ? "row-editing" : ""}">
+        <div class="customer-head">
+          <div>
+            <h3>${escapeHtml(delivery.number)} - ${escapeHtml(delivery.truck)}</h3>
+            <small>${escapeHtml(delivery.date)} - ${escapeHtml(delivery.destinationName || "External")} - ${escapeHtml(delivery.driver)} - Operator: ${escapeHtml(operatorName(delivery.createdBy || delivery.updatedBy))}</small>
+          </div>
+          <div class="toolbar" style="margin-bottom:0">
+            <button class="btn secondary" data-edit-delivery="${delivery.id}">Edit</button>
+            <button class="btn secondary" data-print-delivery="${delivery.id}">Print</button>
+          </div>
+        </div>
+        ${table(["Material", "Loaded", "Delivered", "Status"], [
+          ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td>${badge(delivery.status)}</td></tr>`),
+          `<tr><td><strong>Total</strong></td><td class="num"><strong>${kg(loadedTotal)}</strong></td><td class="num"><strong>${kg(deliveredTotal)}</strong></td><td></td></tr>`,
+        ])}
+      </section>
+    `;
+  }).join("");
+  return groups || `<div class="notice">No delivery records found.</div>`;
+}
+
 function deliveryForm(delivery = null) {
   const action = delivery ? "update-delivery" : "add-delivery";
+  const repeatDelivery = !delivery && state.repeatDeliveryId ? state.deliveries.find((item) => item.id === state.repeatDeliveryId) : null;
+  const source = delivery || repeatDelivery;
   return `
     <form class="panel" data-action="${action}">
       <div class="panel-head">
-        <h3>${delivery ? `Edit ${delivery.number}` : "New delivery"}</h3>
+        <h3>${delivery ? `Edit ${delivery.number}` : repeatDelivery ? `Add scrap to ${repeatDelivery.number}` : "New delivery"}</h3>
         ${delivery ? `<button class="btn secondary" type="button" data-action="cancel-delivery-edit">Cancel edit</button>` : ""}
       </div>
       ${delivery ? `<input type="hidden" name="id" value="${delivery.id}">` : ""}
+      ${repeatDelivery ? `<input type="hidden" name="appendDeliveryId" value="${repeatDelivery.id}">` : ""}
       <div class="form-grid">
-        ${dateInput("date", delivery?.date || today())}
-        ${branchSelect("sourceBranchId", "Source branch", false, delivery?.sourceBranchId)}
-        ${branchSelect("destinationBranchId", "Destination branch", true, delivery?.destinationBranchId || "")}
-        <label>External destination<input name="destinationName" type="text" value="${delivery?.destinationName || ""}"></label>
-        ${input("truck", "Truck plate number", "text", delivery?.truck || "")}
-        ${input("driver", "Driver name", "text", delivery?.driver || "")}
-        ${select("status", [["pending", "Pending"], ["in_transit", "In transit"], ["completed", "Completed"], ["cancelled", "Cancelled"]], delivery?.status)}
+        ${dateInput("date", source?.date || today())}
+        ${branchSelect("sourceBranchId", "Source branch", false, source?.sourceBranchId)}
+        ${branchSelect("destinationBranchId", "Destination", true, "")}
+        <label>Destination<input name="destinationName" type="text" value="${source?.destinationName || ""}"></label>
+        ${input("truck", "Truck plate number", "text", source?.truck || "")}
+        ${input("driver", "Driver name", "text", source?.driver || "")}
+        ${select("status", [["pending", "Pending"], ["in_transit", "In transit"], ["completed", "Completed"], ["cancelled", "Cancelled"]], source?.status)}
       </div>
-      <div class="panel-head" style="margin-top:14px"><h3>Truck load scraps</h3></div>
+      <div class="panel-head" style="margin-top:14px"><h3>${delivery ? "Truck load scraps" : "Single scrap material"}</h3></div>
       ${deliveryLineInputs(delivery)}
-      <label style="margin-top:10px">Notes<textarea name="notes">${delivery?.notes || ""}</textarea></label>
-      <button class="btn" type="submit" style="margin-top:12px">${delivery ? "Save changes" : "Save delivery"}</button>
+      <label style="margin-top:10px">Notes<textarea name="notes">${source?.notes || ""}</textarea></label>
+      ${delivery ? "" : `<label class="check-row"><input type="checkbox" name="keepSameTruck" value="yes" ${repeatDelivery ? "checked" : ""}> Process another scrap material with the same truck</label>`}
+      <button class="btn" type="submit" style="margin-top:12px">${delivery ? "Save changes" : repeatDelivery ? "Add scrap load" : "Save delivery"}</button>
     </form>
   `;
 }
@@ -793,7 +1312,12 @@ function deliveryLines(delivery) {
 }
 
 function deliveryFormLines(data) {
-  return [1, 2, 3, 4].map((lineNo) => ({
+  const lineNumbers = Object.keys(data)
+    .map((key) => key.match(/^materialId(\d+)$/)?.[1])
+    .filter(Boolean)
+    .map(Number)
+    .sort((a, b) => a - b);
+  return lineNumbers.map((lineNo) => ({
     materialId: data[`materialId${lineNo}`],
     loadedWeight: Number(data[`loadedWeight${lineNo}`] || 0),
     deliveredWeight: Number(data[`deliveredWeight${lineNo}`] || 0),
@@ -804,10 +1328,10 @@ function deliveryRecordRows() {
   return state.deliveries.flatMap((delivery) => deliveryLines(delivery).map((line) => ({
     deliveryNumber: delivery.number,
     date: delivery.date,
-    sourceBranch: branchName(delivery.sourceBranchId),
-    destination: delivery.destinationBranchId ? branchName(delivery.destinationBranchId) : delivery.destinationName,
+    destination: delivery.destinationName || "External",
     truck: delivery.truck,
     driver: delivery.driver,
+    operator: operatorName(delivery.createdBy || delivery.updatedBy),
     material: materialName(line.materialId),
     loadedWeightKg: line.loadedWeight,
     deliveredWeightKg: line.deliveredWeight,
@@ -818,7 +1342,8 @@ function deliveryRecordRows() {
 
 function deliveryLineInputs(delivery = null) {
   const lines = delivery ? deliveryLines(delivery) : [];
-  return [1, 2, 3, 4].map((lineNo) => `
+  const lineNumbers = delivery ? Array.from({ length: Math.max(lines.length, 1) }, (_, index) => index + 1) : [1];
+  return lineNumbers.map((lineNo) => `
     <div class="form-grid" style="margin-bottom:10px">
       ${materialSelect(`materialId${lineNo}`, lines[lineNo - 1]?.materialId || "", lineNo === 1)}
       ${numberInput(`loadedWeight${lineNo}`, `Loaded weight ${lineNo}`, lines[lineNo - 1]?.loadedWeight ?? (lineNo === 1 ? "0" : ""), "0.01", lineNo === 1)}
@@ -905,29 +1430,6 @@ function materialForm(material = null) {
   `;
 }
 
-function branchesView() {
-  return page("Branches", "Admin setup for multi-branch tracking and consolidated reporting.", `
-    <section class="split">
-      <form class="panel" data-action="add-branch">
-        <div class="panel-head"><h3>Add branch</h3></div>
-        <div class="form-grid">
-          ${input("name", "Branch name", "text")}
-          ${input("code", "Branch code", "text")}
-          ${input("address", "Address", "text")}
-          ${input("contact", "Contact number", "text")}
-          ${select("status", [["active", "Active"], ["inactive", "Inactive"]])}
-        </div>
-        <button class="btn" type="submit" style="margin-top:12px">Save branch</button>
-      </form>
-      <div class="panel">
-        ${table(["Code", "Name", "Address", "Contact", "Status"], state.branches.map((branch) => `
-          <tr><td>${branch.code}</td><td>${branch.name}</td><td>${branch.address}</td><td>${branch.contact}</td><td>${badge(branch.status)}</td></tr>
-        `))}
-      </div>
-    </section>
-  `);
-}
-
 function employeesView() {
   const editingEmployee = state.employees.find((employee) => employee.id === state.editingEmployeeId) || null;
   return page("Employee Maintenance", "Maintain employee payroll details, government numbers, benefits, start date, and years of service.", `
@@ -968,56 +1470,27 @@ function employeeForm(employee = null) {
 }
 
 function employeeMaintenanceTable() {
-  return table(["Action", "Name", "Branch", "Position", "Salary Type", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Start Date", "Years of Service", "Status"], state.employees.map((employee) => `
-    <tr class="${state.editingEmployeeId === employee.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-employee="${employee.id}">Edit</button> <button class="btn danger" data-delete-employee="${employee.id}">Delete</button></td><td>${employee.name}</td><td>${branchName(employee.branchId)}</td><td>${employee.position}</td><td>${badge(employee.salaryType)}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${employee.startDate || ""}</td><td>${yearsOfService(employee.startDate)}</td><td>${badge(employee.status)}</td></tr>
+  return table(["Action", "Name", "Position", "Salary Type", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Start Date", "Years of Service", "Status"], state.employees.map((employee) => `
+    <tr class="${state.editingEmployeeId === employee.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-employee="${employee.id}">Edit</button> <button class="btn danger" data-delete-employee="${employee.id}">Delete</button></td><td>${employee.name}</td><td>${employee.position}</td><td>${badge(employee.salaryType)}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${employee.startDate || ""}</td><td>${yearsOfService(employee.startDate)}</td><td>${badge(employee.status)}</td></tr>
   `));
 }
 
 function payrollView() {
+  const editingPayroll = state.payrollRuns.find((run) => run.id === state.editingPayrollId) || null;
   return page("Payroll", "Manage employees, cash advances, and payroll net pay calculations.", `
     <section class="grid">
+      ${payrollForm(editingPayroll)}
+      <div class="panel">
+        <div class="panel-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Download all payrolls</button></div>
+        ${payrollSummaryTable()}
+      </div>
       <div class="split">
         <div class="panel">
           <div class="panel-head"><h3>Employee payroll details</h3><button class="btn secondary" data-view="employees">Maintain employees</button></div>
-          ${table(["Name", "Branch", "Position", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Years of Service"], state.employees.map((employee) => `
-            <tr><td>${employee.name}</td><td>${branchName(employee.branchId)}</td><td>${employee.position}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${yearsOfService(employee.startDate)}</td></tr>
+          ${table(["Name", "Position", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Years of Service"], state.employees.map((employee) => `
+            <tr><td>${employee.name}</td><td>${employee.position}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${yearsOfService(employee.startDate)}</td></tr>
           `))}
         </div>
-        <form class="panel" data-action="add-cash-advance">
-          <div class="panel-head"><h3>Cash advance</h3></div>
-          <div class="form-grid">
-            ${employeeSelect("employeeId")}
-            ${dateInput("date", today())}
-            ${input("amount", "Amount", "number", "0", "0.01")}
-            ${input("reason", "Reason", "text")}
-            ${input("balance", "Balance", "number", "0", "0.01")}
-            ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]])}
-          </div>
-          <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
-        </form>
-      </div>
-      <div class="split">
-        <form class="panel" data-action="add-payroll">
-          <div class="panel-head"><h3>New payroll line</h3></div>
-          <div class="form-grid">
-            ${input("period", "Payroll period", "text", "2026-07-16 to 2026-07-31")}
-            ${employeeSelect("employeeId")}
-            ${input("basicPay", "Basic pay", "number", "0", "0.01")}
-            ${input("benefits", "Benefits", "number", "0", "0.01")}
-            ${input("deductions", "Deductions", "number", "0", "0.01")}
-            ${input("cashAdvanceDeduction", "Cash advance deduction", "number", "0", "0.01")}
-            ${select("status", [["draft", "Draft"], ["approved", "Approved"], ["paid", "Paid"]])}
-          </div>
-          <button class="btn" type="submit" style="margin-top:12px">Calculate and save</button>
-        </form>
-        <div class="panel">
-          <div class="panel-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Export CSV</button></div>
-          ${table(["Period", "Employee", "Basic", "Benefits", "Deductions", "CA Deduction", "Net Pay", "Status"], state.payrollRuns.map((run) => `
-            <tr><td>${run.period}</td><td>${employeeName(run.employeeId)}</td><td class="amount">${money(run.basicPay)}</td><td class="amount">${money(run.benefits)}</td><td class="amount">${money(run.deductions)}</td><td class="amount">${money(run.cashAdvanceDeduction)}</td><td class="amount">${money(run.netPay)}</td><td>${badge(run.status)}</td></tr>
-          `))}
-        </div>
-      </div>
-      <div class="split">
         <div class="panel">
           <div class="panel-head"><h3>Cash advances</h3></div>
           ${table(["Employee", "Date", "Amount", "Reason", "Balance", "Status"], state.cashAdvances.map((advance) => `
@@ -1025,8 +1498,152 @@ function payrollView() {
           `))}
         </div>
       </div>
+      <form class="panel" data-action="add-cash-advance">
+        <div class="panel-head"><h3>Cash advance</h3></div>
+        <div class="form-grid">
+          ${employeeSelect("employeeId")}
+          ${dateInput("date", today())}
+          ${input("amount", "Amount", "number", "0", "0.01")}
+          ${input("reason", "Reason", "text")}
+          ${input("balance", "Balance", "number", "0", "0.01")}
+          ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]])}
+        </div>
+        <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
+      </form>
     </section>
   `);
+}
+
+function payrollForm(run = null) {
+  const action = run ? "update-payroll" : "add-payroll";
+  const employee = state.employees.find((item) => item.id === run?.employeeId) || state.employees[0] || {};
+  const monthlySalary = run?.monthlySalary ?? (employee.salaryType === "monthly" ? employee.rate : employee.rate * 26) ?? 0;
+  return `
+    <form class="panel" data-action="${action}" data-payroll-form>
+      <div class="panel-head">
+        <h3>${run ? `Edit payslip - ${employeeName(run.employeeId)}` : "New payslip"}</h3>
+        ${run ? `<button class="btn secondary" type="button" data-action="cancel-payroll-edit">Cancel edit</button>` : ""}
+      </div>
+      ${run ? `<input type="hidden" name="id" value="${run.id}">` : ""}
+      <div class="form-grid">
+        ${input("period", "Payroll period", "text", run?.period || "2026-07-16 to 2026-07-31")}
+        ${dateInput("payDate", run?.payDate || today(), "Pay date")}
+        ${employeeSelect("employeeId", run?.employeeId)}
+        ${input("department", "Department", "text", run?.department || "Operations")}
+        ${input("monthlySalary", "Basic salary", "number", monthlySalary, "0.01")}
+        ${select("status", [["draft", "Draft"], ["approved", "Approved"], ["paid", "Paid"]], run?.status)}
+      </div>
+      <section class="payslip-grid">
+        <div>
+          <h3>Income</h3>
+          <div class="form-grid">
+            ${payrollNumber("basicPay", "Bi-monthly salary", run?.basicPay ?? Number(monthlySalary || 0) / 2)}
+            ${payrollNumber("adjustment", "Adjustment", run?.adjustment)}
+            ${payrollNumber("nightDiffHours", "Night diff hours", run?.nightDiffHours)}
+            ${payrollNumber("nightDiffAmount", "Night diff amount", run?.nightDiffAmount)}
+            ${payrollNumber("overtimeHours", "Overtime hours", run?.overtimeHours)}
+            ${payrollNumber("overtimeAmount", "Overtime amount", run?.overtimeAmount)}
+            ${payrollNumber("restDayHours", "Rest day hours", run?.restDayHours)}
+            ${payrollNumber("restDayAmount", "Rest day amount", run?.restDayAmount)}
+            ${payrollNumber("specialHolidayHours", "Special holiday hours", run?.specialHolidayHours)}
+            ${payrollNumber("specialHolidayAmount", "Special holiday amount", run?.specialHolidayAmount)}
+            ${payrollNumber("regularHolidayHours", "Regular holiday hours", run?.regularHolidayHours)}
+            ${payrollNumber("regularHolidayAmount", "Regular holiday amount", run?.regularHolidayAmount)}
+            ${payrollNumber("taxableAllowance", "Taxable allowance", run?.taxableAllowance)}
+            ${payrollNumber("incentives", "Incentives", run?.incentives ?? run?.benefits)}
+            ${payrollNumber("commission", "Commission", run?.commission)}
+            ${payrollNumber("transpoAllowance", "Transpo allowance", run?.transpoAllowance)}
+            ${payrollNumber("clothingAllowance", "Clothing allowance", run?.clothingAllowance)}
+            ${payrollNumber("mealAllowance", "Meal allowance", run?.mealAllowance)}
+            ${payrollNumber("nta", "NTA", run?.nta)}
+            ${payrollNumber("bonus", "Bonus", run?.bonus)}
+          </div>
+        </div>
+        <div>
+          <h3>Deductions</h3>
+          <div class="form-grid">
+            ${payrollNumber("lateMins", "Late mins", run?.lateMins)}
+            ${payrollNumber("lateDeduction", "Late deduction", run?.lateDeduction)}
+            ${payrollNumber("absentDays", "Absent days", run?.absentDays)}
+            ${payrollNumber("absentDeduction", "Absent deduction", run?.absentDeduction)}
+            ${payrollNumber("hmo", "HMO", run?.hmo)}
+            ${payrollNumber("sss", "SSS", run?.sss)}
+            ${payrollNumber("sssMpf", "SSS MPF", run?.sssMpf)}
+            ${payrollNumber("philHealth", "PhilHealth", run?.philHealth)}
+            ${payrollNumber("hdmf", "HDMF", run?.hdmf)}
+            ${payrollNumber("sssSalaryLoan", "SSS salary loan", run?.sssSalaryLoan)}
+            ${payrollNumber("sssCalamityLoan", "SSS calamity loan", run?.sssCalamityLoan)}
+            ${payrollNumber("hdmfMpl", "HDMF MPL", run?.hdmfMpl)}
+            ${payrollNumber("hdmfCalamityLoan", "HDMF calamity loan", run?.hdmfCalamityLoan)}
+            ${payrollNumber("companyLoan", "Company loan", run?.companyLoan)}
+            ${payrollNumber("tax", "Tax withheld/refund", run?.tax)}
+            ${payrollNumber("cashAdvanceDeduction", "Cash advance deduction", run?.cashAdvanceDeduction)}
+          </div>
+        </div>
+      </section>
+      <div class="notice payroll-total" data-payroll-summary>Gross Pay: PHP 0.00 | Deductions: PHP 0.00 | Net Pay: PHP 0.00</div>
+      <button class="btn" type="submit" style="margin-top:12px">${run ? "Save changes" : "Calculate and save"}</button>
+    </form>
+  `;
+}
+
+function payrollNumber(name, labelText, value = 0) {
+  return numberInput(name, labelText, value ?? 0, "0.01", false);
+}
+
+function payrollSummaryTable() {
+  return table(["Action", "Period", "Pay Date", "Employee", "Gross Pay", "Deductions", "Net Pay", "Status"], state.payrollRuns.map((run) => `
+    <tr class="${state.editingPayrollId === run.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-payroll="${run.id}">Edit</button> <button class="btn secondary" data-print-payroll="${run.id}">Print payslip</button></td><td>${run.period}</td><td>${run.payDate || ""}</td><td>${employeeName(run.employeeId)}</td><td class="amount">${money(payrollTotals(run).grossPay)}</td><td class="amount">${money(payrollTotals(run).totalDeduction)}</td><td class="amount">${money(payrollTotals(run).netPay)}</td><td>${badge(run.status)}</td></tr>
+  `));
+}
+
+const payrollIncomeFields = ["basicPay", "adjustment", "nightDiffAmount", "overtimeAmount", "restDayAmount", "specialHolidayAmount", "regularHolidayAmount", "taxableAllowance", "incentives", "commission", "transpoAllowance", "clothingAllowance", "mealAllowance", "nta", "bonus"];
+const payrollDeductionFields = ["lateDeduction", "absentDeduction", "hmo", "sss", "sssMpf", "philHealth", "hdmf", "sssSalaryLoan", "sssCalamityLoan", "hdmfMpl", "hdmfCalamityLoan", "companyLoan", "tax", "cashAdvanceDeduction"];
+
+function payrollTotals(run) {
+  const legacyBenefits = run?.incentives == null && run?.benefits != null ? Number(run.benefits || 0) : 0;
+  const grossPay = payrollIncomeFields.reduce((sum, field) => sum + Number(run?.[field] || 0), 0) + legacyBenefits;
+  const legacyDeductions = run?.lateDeduction == null && run?.deductions != null ? Number(run.deductions || 0) : 0;
+  const totalDeduction = payrollDeductionFields.reduce((sum, field) => sum + Number(run?.[field] || 0), 0) + legacyDeductions;
+  return { grossPay, totalDeduction, netPay: grossPay - totalDeduction };
+}
+
+function payrollFormData(data, existing = null) {
+  const values = {
+    id: existing?.id || id("pr"),
+    period: data.period,
+    payDate: data.payDate,
+    employeeId: data.employeeId,
+    department: data.department,
+    monthlySalary: Number(data.monthlySalary || 0),
+    status: data.status,
+    createdBy: existing?.createdBy || currentUser().id,
+    updatedBy: currentUser().id,
+  };
+  [...payrollIncomeFields, ...payrollDeductionFields, "nightDiffHours", "overtimeHours", "restDayHours", "specialHolidayHours", "regularHolidayHours", "lateMins", "absentDays"].forEach((field) => {
+    values[field] = Number(data[field] || 0);
+  });
+  const totals = payrollTotals(values);
+  return { ...values, benefits: values.incentives, deductions: totals.totalDeduction - values.cashAdvanceDeduction, grossPay: totals.grossPay, totalDeduction: totals.totalDeduction, netPay: totals.netPay };
+}
+
+function payrollExportRows() {
+  return state.payrollRuns.map((run) => {
+    const employee = state.employees.find((item) => item.id === run.employeeId) || {};
+    const totals = payrollTotals(run);
+    return {
+      period: run.period,
+      payDate: run.payDate || "",
+      employee: employee.name || "",
+      department: run.department || "",
+      position: employee.position || "",
+      basicSalary: run.monthlySalary || "",
+      grossPay: totals.grossPay,
+      totalDeduction: totals.totalDeduction,
+      netPay: totals.netPay,
+      status: run.status,
+    };
+  });
 }
 
 function reportsView() {
@@ -1040,17 +1657,14 @@ function reportsView() {
     return { ...tx, cost, profit: tx.total - cost };
   });
 
-  return page("Reports", "Filter by date and branch, export operational reports, and restrict income reports to admin users.", `
+  return page("Reports", "Filter by date, export operational reports, and restrict income reports to admin users.", `
     <section class="grid">
       <div class="panel">
         <div class="panel-head"><h3>Filters</h3></div>
         <div class="form-grid">
           <label>From date<input data-report-filter="from" type="date" value="${filters.from}"></label>
           <label>To date<input data-report-filter="to" type="date" value="${filters.to}"></label>
-          <label>Branch<select data-report-filter="branchId">
-            ${isAdmin() ? `<option value="all" ${filters.branchId === "all" ? "selected" : ""}>All branches</option>` : ""}
-            ${visibleBranches().map((branch) => `<option value="${branch.id}" ${filters.branchId === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}
-          </select></label>
+          <input type="hidden" data-report-filter="branchId" value="${defaultBranchId()}">
         </div>
       </div>
       <div class="panel">
@@ -1068,8 +1682,8 @@ function reportsView() {
       ${isAdmin() ? `
         <div class="panel">
           <div class="panel-head"><h3>Income and profit report</h3><button class="btn secondary" data-export="income">Export CSV</button></div>
-          ${table(["Date", "Branch", "Material", "Sales", "Estimated Cost", "Profit"], profitRows.map((tx) => `
-            <tr><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
+          ${table(["Date", "Material", "Sales", "Estimated Cost", "Profit"], profitRows.map((tx) => `
+            <tr><td>${tx.date}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
           `))}
         </div>` : `<div class="notice">Income and profit reports are visible only to admin users.</div>`}
     </section>
@@ -1077,17 +1691,17 @@ function reportsView() {
 }
 
 function transactionReportTable(rows) {
-  return table(["Date", "Branch", "Name", "Material", "Weight", "Price", "Total", "Payment"], rows.map((tx) => `
-    <tr><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.price)}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
+  return table(["Date", "Name", "Material", "Weight", "Price", "Total", "Payment"], rows.map((tx) => `
+    <tr><td>${tx.date}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.price)}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
   `));
 }
 
 function filteredReportTransactions() {
-  const filters = state.reportFilters || { from: "", to: "", branchId: "all" };
+  const filters = state.reportFilters || { from: "", to: "", branchId: defaultBranchId() };
   return branchFilter(state.transactions).filter((tx) => {
     const afterFrom = !filters.from || tx.date >= filters.from;
     const beforeTo = !filters.to || tx.date <= filters.to;
-    const inBranch = filters.branchId === "all" || tx.branchId === filters.branchId;
+    const inBranch = tx.branchId === defaultBranchId();
     return afterFrom && beforeTo && inBranch;
   });
 }
@@ -1096,7 +1710,6 @@ function inventoryRows() {
   return visibleBranches().flatMap((branch) => state.materials.map((material) => {
     const currentStockKg = stockFor(branch.id, material.id);
     return {
-      branch: branch.name,
       material: material.name,
       category: material.category,
       unit: material.unit,
@@ -1104,18 +1717,19 @@ function inventoryRows() {
       buyingPricePerKilo: material.buyPrice,
       sellingPricePerKilo: material.sellPrice,
       estimatedValue: currentStockKg * material.sellPrice,
+      location: branch.name,
     };
   }));
 }
 
 function usersView() {
   const editingUser = state.users.find((user) => user.id === state.editingUserId) || null;
-  return page("Users", "Admin user management for role-based access and branch assignment.", `
+  return page("Users", "Admin user management for role-based access.", `
     <section class="split">
       ${userForm(editingUser)}
       <div class="panel">
-        ${table(["Action", "Name", "Email", "Role", "Branch", "Status"], state.users.map((user) => `
-          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${user.name}</td><td>${user.email}</td><td>${roles[user.role]}</td><td>${branchName(user.branchId)}</td><td>${badge(user.status)}</td></tr>
+        ${table(["Action", "Name", "Email", "Role", "Status"], state.users.map((user) => `
+          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${user.name}</td><td>${user.email}</td><td>${roles[user.role]}</td><td>${badge(user.status)}</td></tr>
         `))}
       </div>
     </section>
@@ -1135,7 +1749,7 @@ function userForm(user = null) {
         ${input("name", "Name", "text", user?.name || "")}
         ${input("email", "Email or username", "email", user?.email || "")}
         ${input("password", "Password", "password", user?.password || "")}
-        ${select("role", [["staff", "Branch Staff"], ["payroll", "Payroll/Admin Staff"], ["admin", "Admin"]], user?.role)}
+        ${select("role", [["staff", "Staff"], ["payroll", "Payroll/Admin Staff"], ["admin", "Admin"]], user?.role)}
         ${branchSelect("branchId", "Branch", false, user?.branchId)}
         ${select("status", [["active", "Active"], ["inactive", "Inactive"]], user?.status)}
       </div>
@@ -1171,8 +1785,8 @@ function select(name, options, selectedValue = "") {
 }
 
 function branchSelect(name, labelText = "Branch", includeBlank = false, selectedValue = "") {
-  const options = `${includeBlank ? `<option value="" ${selectedValue === "" ? "selected" : ""}>External/no receiving branch</option>` : ""}${visibleBranches().map((branch) => `<option value="${branch.id}" ${selectedValue === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}`;
-  return `<label>${labelText}<select name="${name}">${options}</select></label>`;
+  const value = includeBlank ? "" : defaultBranchId();
+  return `<input type="hidden" name="${name}" value="${value}">`;
 }
 
 function partySelect(name, selectedValue = "") {
@@ -1184,8 +1798,8 @@ function materialSelect(name, selectedValue = "", required = true) {
   return `<label>Scrap material<select name="${name}" ${required ? "required" : ""}>${blank}${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select></label>`;
 }
 
-function employeeSelect(name) {
-  return `<label>Employee<select name="${name}">${state.employees.map((employee) => `<option value="${employee.id}">${employee.name}</option>`).join("")}</select></label>`;
+function employeeSelect(name, selectedValue = "") {
+  return `<label>Employee<select name="${name}">${state.employees.map((employee) => `<option value="${employee.id}" ${selectedValue === employee.id ? "selected" : ""}>${employee.name}</option>`).join("")}</select></label>`;
 }
 
 function employeeName(employeeId) {
@@ -1262,6 +1876,10 @@ function bindEvents() {
     button.addEventListener("click", () => printReceipt(button.dataset.printReceipt));
   });
 
+  document.querySelectorAll("[data-print-customer-receipt]").forEach((button) => {
+    button.addEventListener("click", () => printCustomerReceipt(button.dataset.printCustomerReceipt));
+  });
+
   document.querySelectorAll("[data-action='cancel-transaction-edit']").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingTransactionId = null;
@@ -1292,6 +1910,10 @@ function bindEvents() {
       saveState();
       render();
     });
+  });
+
+  document.querySelectorAll("[data-print-delivery]").forEach((button) => {
+    button.addEventListener("click", () => printDelivery(button.dataset.printDelivery));
   });
 
   document.querySelectorAll("[data-action='cancel-delivery-edit']").forEach((button) => {
@@ -1358,6 +1980,26 @@ function bindEvents() {
     button.addEventListener("click", () => deleteEmployee(button.dataset.deleteEmployee));
   });
 
+  document.querySelectorAll("[data-edit-payroll]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingPayrollId = button.dataset.editPayroll;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-print-payroll]").forEach((button) => {
+    button.addEventListener("click", () => printPayroll(button.dataset.printPayroll));
+  });
+
+  document.querySelectorAll("[data-action='cancel-payroll-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingPayrollId = null;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-action='start-camera']").forEach((button) => {
     button.addEventListener("click", () => startAttendanceCamera());
   });
@@ -1370,11 +2012,22 @@ function bindEvents() {
     inputEl.addEventListener("change", () => loadAttendancePhotoFile(inputEl));
   });
 
+  document.querySelectorAll("[data-print-cash-operation]").forEach((button) => {
+    button.addEventListener("click", () => printCashOperation(button.dataset.printCashOperation));
+  });
+
   document.querySelectorAll("[data-transaction-form]").forEach((form) => {
     const update = (event) => updateTransactionAmounts(form, event?.target);
     form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
     form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
     updateTransactionAmounts(form);
+  });
+
+  document.querySelectorAll("[data-payroll-form]").forEach((form) => {
+    const update = () => updatePayrollSummary(form);
+    form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
+    form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
+    updatePayrollSummary(form);
   });
 
   document.querySelector("[data-filter='party-search']")?.addEventListener("input", (event) => {
@@ -1398,6 +2051,7 @@ function handleForm(action, data) {
     login: login,
     "clock-in": clockIn,
     "clock-out": clockOut,
+    "save-cash-operation": saveCashOperation,
     "add-transaction": addTransaction,
     "update-transaction": updateTransaction,
     "add-adjustment": addAdjustment,
@@ -1407,8 +2061,8 @@ function handleForm(action, data) {
     "update-party": updateParty,
     "add-material": addMaterial,
     "update-material": updateMaterial,
-    "add-branch": addBranch,
     "add-payroll": addPayroll,
+    "update-payroll": updatePayroll,
     "add-employee": addEmployee,
     "update-employee": updateEmployee,
     "add-cash-advance": addCashAdvance,
@@ -1545,6 +2199,13 @@ function updateTransactionAmounts(form, sourceField = null) {
   if (summary) summary.textContent = `Total: ${money(total)} | Balance: ${money(balance)}`;
 }
 
+function updatePayrollSummary(form) {
+  const data = Object.fromEntries(new FormData(form));
+  const totals = payrollTotals(payrollFormData(data, state.payrollRuns.find((run) => run.id === data.id)));
+  const summary = form.querySelector("[data-payroll-summary]");
+  if (summary) summary.textContent = `Gross Pay: ${money(totals.grossPay)} | Deductions: ${money(totals.totalDeduction)} | Net Pay: ${money(totals.netPay)}`;
+}
+
 function transactionValues(data, existingNumber = null) {
   const material = state.materials.find((item) => item.id === data.materialId);
   const weight = Number(data.weight);
@@ -1597,6 +2258,30 @@ function addTransaction(data) {
   }
   state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id });
   state.stockMovements.push(autoStockMovement(tx));
+  state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
+  saveState();
+  render();
+}
+
+function saveCashOperation(data) {
+  const existing = cashOperationRecord(data.branchId, data.date);
+  const record = {
+    id: existing?.id || id("cap"),
+    date: data.date,
+    branchId: data.branchId,
+    openingCash: Number(data.openingCash || 0),
+    amount: Number(data.openingCash || 0),
+    closeCash: data.closeCash === "" ? "" : Number(data.closeCash || 0),
+    notes: data.notes,
+    createdBy: existing?.createdBy || currentUser().id,
+    updatedBy: currentUser().id,
+  };
+  if (existing) {
+    const index = state.dailyCapitals.findIndex((capital) => capital.id === existing.id);
+    state.dailyCapitals[index] = record;
+  } else {
+    state.dailyCapitals.push(record);
+  }
   saveState();
   render();
 }
@@ -1625,10 +2310,18 @@ function addAdjustment(data) {
 }
 
 function addDelivery(data) {
-  const delivery = deliveryValues(data);
+  const existing = data.appendDeliveryId ? state.deliveries.find((delivery) => delivery.id === data.appendDeliveryId) : null;
+  const delivery = deliveryValues(data, existing, Boolean(existing));
   if (!delivery) return;
-  state.deliveries.push(delivery);
+  if (existing) {
+    const index = state.deliveries.findIndex((item) => item.id === existing.id);
+    state.deliveries[index] = delivery;
+    state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== existing.number);
+  } else {
+    state.deliveries.push(delivery);
+  }
   applyDeliveryStockMovements(delivery);
+  state.repeatDeliveryId = data.keepSameTruck === "yes" ? delivery.id : "";
   saveState();
   render();
 }
@@ -1647,8 +2340,13 @@ function updateDelivery(data) {
   render();
 }
 
-function deliveryValues(data, existing = null) {
-  const lines = deliveryFormLines(data);
+function deliveryValues(data, existing = null, appendLine = false) {
+  const formLines = deliveryFormLines(data);
+  if (appendLine && !formLines.length) {
+    alert("Add one scrap material with loaded weight.");
+    return null;
+  }
+  const lines = appendLine ? [...deliveryLines(existing), ...formLines] : formLines;
   if (!lines.length) {
     alert("Add at least one scrap material with loaded weight.");
     return null;
@@ -1673,6 +2371,8 @@ function deliveryValues(data, existing = null) {
     driver: data.driver,
     status: data.status,
     notes: data.notes,
+    createdBy: existing?.createdBy || currentUser().id,
+    updatedBy: currentUser().id,
     lines,
   };
 }
@@ -1735,18 +2435,17 @@ function updateMaterial(data) {
   render();
 }
 
-function addBranch(data) {
-  state.branches.push({ id: id("b"), ...data });
+function addPayroll(data) {
+  state.payrollRuns.push(payrollFormData(data));
   saveState();
   render();
 }
 
-function addPayroll(data) {
-  const basicPay = Number(data.basicPay);
-  const benefits = Number(data.benefits);
-  const deductions = Number(data.deductions);
-  const cashAdvanceDeduction = Number(data.cashAdvanceDeduction);
-  state.payrollRuns.push({ id: id("pr"), period: data.period, employeeId: data.employeeId, basicPay, benefits, deductions, cashAdvanceDeduction, netPay: basicPay + benefits - deductions - cashAdvanceDeduction, status: data.status });
+function updatePayroll(data) {
+  const index = state.payrollRuns.findIndex((run) => run.id === data.id);
+  if (index === -1) return;
+  state.payrollRuns[index] = payrollFormData(data, state.payrollRuns[index]);
+  state.editingPayrollId = null;
   saveState();
   render();
 }
@@ -1848,15 +2547,15 @@ function deleteUser(userId) {
 function exportCsv(type) {
   const reportTransactions = filteredReportTransactions();
   const datasets = {
-    transactions: state.transactions,
+    transactions: branchFilter(state.transactions),
     purchases: reportTransactions.filter((tx) => tx.type === "purchase"),
     sales: reportTransactions.filter((tx) => tx.type === "sale"),
     deliveries: deliveryRecordRows(),
-    payroll: state.payrollRuns,
+    payroll: payrollExportRows(),
     inventory: inventoryRows(),
     income: reportTransactions.filter((tx) => tx.type === "sale").map((tx) => {
       const material = state.materials.find((item) => item.id === tx.materialId);
-      return { date: tx.date, branch: branchName(tx.branchId), material: materialName(tx.materialId), sales: tx.total, cost: tx.weight * (material?.buyPrice || 0), profit: tx.total - tx.weight * (material?.buyPrice || 0) };
+      return { date: tx.date, material: materialName(tx.materialId), sales: tx.total, cost: tx.weight * (material?.buyPrice || 0), profit: tx.total - tx.weight * (material?.buyPrice || 0) };
     }),
   };
   if (type === "income" && !isAdmin()) return;
@@ -1895,8 +2594,8 @@ function exportExcel(type) {
 
 function excelWorkbook(sheetName, rows) {
   const defaultHeaders = {
-    inventory: ["branch", "material", "category", "unit", "currentStockKg", "buyingPricePerKilo", "sellingPricePerKilo", "estimatedValue"],
-    deliveries: ["deliveryNumber", "date", "sourceBranch", "destination", "truck", "driver", "material", "loadedWeightKg", "deliveredWeightKg", "status", "notes"],
+    inventory: ["material", "category", "unit", "currentStockKg", "buyingPricePerKilo", "sellingPricePerKilo", "estimatedValue", "location"],
+    deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "status", "notes"],
   };
   const headers = rows.length ? Object.keys(rows[0]) : defaultHeaders[sheetName] || [];
   const headerCells = headers.map((header) => `<th>${escapeHtml(labelFromName(header))}</th>`).join("");
