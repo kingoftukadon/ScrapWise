@@ -125,7 +125,7 @@ const translations = {
 
 const navIcons = {
   dashboard: "grid",
-  attendance: "camera",
+  attendance: "clipboard",
   reviewAttendance: "clipboard",
   cashOperation: "wallet",
   transactions: "plus",
@@ -134,6 +134,7 @@ const navIcons = {
   parties: "users",
   materials: "tag",
   branches: "building",
+  destinations: "truck",
   employees: "users",
   payroll: "wallet",
   reports: "chart",
@@ -168,16 +169,25 @@ const seedState = {
   activeView: "dashboard",
   language: "en",
   reportFilters: { from: "", to: "", branchId: "all" },
+  inventoryFilters: { materialId: "all", branchId: "all" },
   editingTransactionId: null,
   editingPartyId: null,
   editingDeliveryId: null,
   editingMaterialId: null,
   editingUserId: null,
+  editingBranchId: null,
+  editingDestinationId: null,
+  editingAttendanceId: null,
   editingEmployeeId: null,
   editingPayrollId: null,
   repeatTransactionPartyId: "",
   repeatDeliveryId: "",
+  cashOperationDate: today(),
+  cashOperationBranchId: "",
+  attendanceDate: today(),
+  attendanceBranchId: "",
   attendanceRecords: [],
+  cashMovements: [],
   dailyCapitals: [
     { id: "cap1", date: today(), branchId: "b1", amount: 10000, notes: "Opening capital for today", createdBy: "u1" },
   ],
@@ -217,6 +227,10 @@ const seedState = {
   deliveries: [
     { id: "d1", number: "DLV-0001", date: today(), sourceBranchId: "b1", destinationBranchId: "b2", destinationName: "", truck: "ABC 1234", driver: "R. Santos", status: "in_transit", notes: "Branch transfer", lines: [{ materialId: "m1", loadedWeight: 20, deliveredWeight: 0 }, { materialId: "m3", loadedWeight: 12, deliveredWeight: 0 }] },
   ],
+  destinations: [
+    { id: "dst1", name: "Metro Recycling Buyer", type: "buyer", contact: "0918 200 0012", address: "Industrial Zone", notes: "External scrap buyer", status: "active" },
+    { id: "dst2", name: "Central Warehouse", type: "warehouse", contact: "0917 300 0001", address: "Central Processing Yard", notes: "Bulk delivery point", status: "active" },
+  ],
   employees: [
     { id: "e1", name: "Pedro Reyes", branchId: "b1", position: "Sorter", salaryType: "daily", rate: 550, sssNo: "34-1234567-8", pagibigNo: "1212-3456-7890", benefits: "Rice allowance, meal allowance", startDate: "2023-03-15", status: "active" },
     { id: "e2", name: "Ana Cruz", branchId: "b2", position: "Cashier", salaryType: "monthly", rate: 18000, sssNo: "34-7654321-0", pagibigNo: "9876-5432-1011", benefits: "SSS, PhilHealth, Pag-IBIG", startDate: "2021-08-01", status: "active" },
@@ -243,9 +257,16 @@ function loadState() {
     ...structuredClone(seedState),
     ...parsed,
     reportFilters: { ...seedState.reportFilters, ...(parsed.reportFilters || {}) },
+    inventoryFilters: { ...seedState.inventoryFilters, ...(parsed.inventoryFilters || {}) },
     language: parsed.language || "en",
+    cashOperationDate: parsed.cashOperationDate || today(),
+    cashOperationBranchId: parsed.cashOperationBranchId || "",
+    attendanceDate: parsed.attendanceDate || today(),
+    attendanceBranchId: parsed.attendanceBranchId || "",
     attendanceRecords: parsed.attendanceRecords || [],
+    cashMovements: parsed.cashMovements || [],
     dailyCapitals: parsed.dailyCapitals || [],
+    destinations: parsed.destinations || seedState.destinations,
     employees: (parsed.employees || seedState.employees).map((employee) => ({
       sssNo: "",
       pagibigNo: "",
@@ -287,7 +308,8 @@ function isPayroll() {
 function visibleBranches() {
   const user = currentUser();
   const branchId = defaultBranchId();
-  return state.branches.filter((branch) => branch.id === branchId || (!branchId && branch.status === "active")).slice(0, 1);
+  if (user?.role === "admin") return state.branches.filter((branch) => branch.status === "active");
+  return state.branches.filter((branch) => branch.id === branchId && branch.status === "active");
 }
 
 function defaultBranchId() {
@@ -297,6 +319,16 @@ function defaultBranchId() {
 
 function branchName(branchId) {
   return state.branches.find((branch) => branch.id === branchId)?.name || "Unknown branch";
+}
+
+function destinationContactName(destinationId) {
+  return state.destinations?.find((destination) => destination.id === destinationId)?.name || "";
+}
+
+function deliveryDestinationName(delivery) {
+  if (delivery.destinationContactId) return destinationContactName(delivery.destinationContactId) || delivery.destinationName || "External";
+  if (delivery.destinationBranchId) return branchName(delivery.destinationBranchId);
+  return delivery.destinationName || "External";
 }
 
 function materialName(materialId) {
@@ -314,8 +346,8 @@ function stockFor(branchId, materialId) {
 }
 
 function branchFilter(records, field = "branchId") {
-  const branchId = defaultBranchId();
-  return records.filter((record) => record[field] === branchId);
+  const branchIds = visibleBranches().map((branch) => branch.id);
+  return records.filter((record) => branchIds.includes(record[field]));
 }
 
 function render() {
@@ -344,15 +376,10 @@ function loginView() {
         </section>
         <form class="login-panel" id="login" data-action="login">
           <h2>Sign in</h2>
-          <p>Use a demo account to enter the ScrapWise workspace.</p>
+          <p>Enter your assigned account. ScrapWise will open the correct access level for your role.</p>
           <label>Email or username<input name="email" value="admin@junkshop.local" autocomplete="username" required></label>
           <label>Password<input name="password" type="password" value="admin123" autocomplete="current-password" required></label>
           <button class="btn" type="submit">Log in</button>
-          <div class="demo-logins">
-            <button type="button" data-demo="admin@junkshop.local">Admin</button>
-            <button type="button" data-demo="staff@junkshop.local">Staff</button>
-            <button type="button" data-demo="payroll@junkshop.local">Payroll</button>
-          </div>
         </form>
       </div>
     </section>
@@ -370,12 +397,14 @@ function shell(user) {
     ["deliveries", "Deliveries"],
     ["parties", "Customers/Suppliers"],
     ["materials", "Materials/Prices"],
+    ["branches", "Location Maintenance"],
+    ["destinations", "Destination Maintenance"],
     ["employees", "Employee Maintenance"],
     ["payroll", "Payroll"],
     ["reports", "Reports"],
     ["users", "Users"],
   ].filter(([view]) => {
-    if (["users", "materials"].includes(view)) return isAdmin();
+    if (["users", "materials", "branches", "destinations"].includes(view)) return isAdmin();
     if (["payroll", "employees"].includes(view)) return isPayroll();
     return true;
   });
@@ -421,6 +450,8 @@ function viewContent() {
     deliveries: deliveriesView,
     parties: partiesView,
     materials: materialsView,
+    branches: branchesView,
+    destinations: destinationsView,
     employees: employeesView,
     payroll: payrollView,
     reports: reportsView,
@@ -441,41 +472,76 @@ function page(title, subtitle, body) {
 
 function dashboardView() {
   const transactions = branchFilter(state.transactions);
-  const todayTransactions = transactions.filter((tx) => tx.date === today());
-  const purchases = todayTransactions.filter((tx) => tx.type === "purchase").reduce((sum, tx) => sum + tx.total, 0);
-  const sales = todayTransactions.filter((tx) => tx.type === "sale").reduce((sum, tx) => sum + tx.total, 0);
-  const pending = transactions.reduce((sum, tx) => sum + tx.balance, 0);
-  const inventoryValue = visibleBranches().reduce((sum, branch) => {
-    return sum + state.materials.reduce((inner, material) => inner + stockFor(branch.id, material.id) * material.sellPrice, 0);
-  }, 0);
-  const activeDeliveries = state.deliveries.filter((delivery) => delivery.status === "in_transit").length;
-  const payroll = state.payrollRuns.reduce((sum, run) => sum + run.netPay, 0);
+  const monthRange = currentMonthRange();
+  const weekDates = lastNDates(7);
+  const monthlyTransactions = transactions.filter((tx) => tx.date >= monthRange.start && tx.date <= monthRange.end);
+  const weeklyTransactions = transactions.filter((tx) => weekDates.includes(tx.date));
+  const inventoryValue = stockPositionRows().reduce((sum, row) => sum + row.estimatedValue, 0);
+  const monthlyPurchases = totalByType(monthlyTransactions, "purchase");
+  const monthlySales = totalByType(monthlyTransactions, "sale");
+  const pending = transactions.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
+  const activeDeliveries = state.deliveries.filter((delivery) => ["pending", "in_transit"].includes(delivery.status)).length;
+  const completedDeliveries = state.deliveries.filter((delivery) => delivery.status === "completed").length;
   const dashboardCash = cashPosition(currentCapitalBranchId());
-  const profit = transactions.reduce((sum, tx) => {
-    const material = state.materials.find((item) => item.id === tx.materialId);
-    if (tx.type !== "sale" || !material) return sum;
-    return sum + tx.weight * (tx.price - material.buyPrice);
-  }, 0);
+  const monthlyProfit = profitFor(monthlyTransactions);
 
-  return page("Dashboard", "Operational summary for stock, payments, deliveries, and fast-moving materials.", `
-    <section class="grid cards">
-      ${metric("Total purchases today", money(purchases))}
-      ${metric("Total sales today", money(sales))}
-      ${metric("Current inventory value", money(inventoryValue))}
-      ${metric("Pending payments", money(pending))}
-      ${metric("Remaining operating cash", money(dashboardCash.remaining))}
-      ${metric("Deliveries in progress", activeDeliveries)}
-      ${metric("Payroll summary", money(payroll))}
-      ${isAdmin() ? metric("Income summary", money(profit)) : ""}
-    </section>
-    <section class="split" style="margin-top:14px">
-      <div class="panel">
-        <div class="panel-head"><h3>Fast-moving scrap materials</h3></div>
-        ${barChart(materialMovement())}
+  return page("Dashboard", "Monthly and weekly KPI view for buying, selling, stock, deliveries, and cash.", `
+    <section class="dashboard-hero">
+      <div>
+        <span class="dash-eyebrow">ScrapWise operations</span>
+        <h1>Monthly and weekly KPI dashboard</h1>
+        <p>${monthRange.label} - live operational snapshot</p>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Current stock</h3></div>
-        ${stockTable()}
+      <div class="dash-date">${today()}</div>
+    </section>
+
+    <section class="dash-kpi-band">
+      <div class="dash-band-head">
+        <h3>Amount Summary</h3>
+        <span>Cash and value position</span>
+      </div>
+      <div class="dash-kpi-grid amount-summary-grid">
+        ${dashboardKpi("Purchases", money(monthlyPurchases), `${kg(weightByType(monthlyTransactions, "purchase"))} bought`, "green")}
+        ${dashboardKpi("Sales", money(monthlySales), `${kg(weightByType(monthlyTransactions, "sale"))} sold`, "blue")}
+        ${dashboardKpi("Gross profit", money(monthlyProfit), isAdmin() ? "Admin-visible income view" : "Estimated income", "purple")}
+        ${dashboardKpi("Inventory value", money(inventoryValue), `${stockPositionRows().length} stock rows`, "teal")}
+        ${dashboardKpi("Operating cash", money(dashboardCash.remaining), "Expected cash today", "teal")}
+        ${dashboardKpi("Pending payments", money(pending), "Open balances", "orange")}
+      </div>
+    </section>
+
+    <section class="dash-kpi-band">
+      <div class="dash-band-head">
+        <h3>Monthly KPI</h3>
+        <span>${monthRange.start} to ${monthRange.end}</span>
+      </div>
+      <div class="dash-kpi-grid">
+        ${dashboardKpi("Bought kilos", kg(weightByType(monthlyTransactions, "purchase")), `${monthlyTransactions.filter((tx) => tx.type === "purchase").length} purchase lines`, "green")}
+        ${dashboardKpi("Sold kilos", kg(weightByType(monthlyTransactions, "sale")), `${monthlyTransactions.filter((tx) => tx.type === "sale").length} sale lines`, "blue")}
+        ${dashboardKpi("Transactions", monthlyTransactions.length, "Purchase and sale activity", "purple")}
+        ${dashboardKpi("Deliveries", `${activeDeliveries} active`, `${completedDeliveries} completed`, "teal")}
+      </div>
+    </section>
+
+    <section class="dash-chart-row">
+      <div class="dash-panel chart-panel">
+        <div class="panel-head"><h3>Weekly purchases vs sales</h3><span class="mini-label">Last 7 days</span></div>
+        ${weeklyPurchaseSalesChart(weekDates, transactions)}
+      </div>
+      <div class="dash-panel funnel-panel">
+        <div class="panel-head"><h3>Material movement funnel</h3><span class="mini-label">This month</span></div>
+        ${materialFunnel(materialMovement(monthlyTransactions))}
+      </div>
+    </section>
+
+    <section class="dash-chart-row lower">
+      <div class="dash-panel chart-panel wide">
+        <div class="panel-head"><h3>Weekly transaction count</h3><span class="mini-label">Purchase and sale activity</span></div>
+        ${weeklyCountChart(weekDates, transactions)}
+      </div>
+      <div class="dash-panel">
+        <div class="panel-head"><h3>Stock value by material</h3><span class="mini-label">Current</span></div>
+        ${stockValueChart()}
       </div>
     </section>
   `);
@@ -485,13 +551,115 @@ function metric(label, value) {
   return `<div class="card"><span class="label">${t(label)}</span><span class="value">${value}</span></div>`;
 }
 
-function materialMovement() {
+function materialMovement(transactions = branchFilter(state.transactions)) {
   return state.materials.map((material) => {
-    const total = branchFilter(state.transactions)
+    const total = transactions
       .filter((tx) => tx.materialId === material.id)
       .reduce((sum, tx) => sum + tx.weight, 0);
     return { label: material.name, value: total };
   }).sort((a, b) => b.value - a.value);
+}
+
+function currentMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    start: isoDate(start),
+    end: isoDate(end),
+    label: now.toLocaleString("en-PH", { month: "long", year: "numeric" }),
+  };
+}
+
+function lastNDates(count) {
+  const dates = [];
+  const base = new Date(today());
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const date = new Date(base);
+    date.setDate(base.getDate() - index);
+    dates.push(isoDate(date));
+  }
+  return dates;
+}
+
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function totalByType(transactions, type) {
+  return transactions.filter((tx) => tx.type === type).reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+}
+
+function weightByType(transactions, type) {
+  return transactions.filter((tx) => tx.type === type).reduce((sum, tx) => sum + Number(tx.weight || 0), 0);
+}
+
+function profitFor(transactions) {
+  return transactions.reduce((sum, tx) => {
+    const material = state.materials.find((item) => item.id === tx.materialId);
+    if (tx.type !== "sale" || !material) return sum;
+    return sum + Number(tx.weight || 0) * (Number(tx.price || 0) - Number(material.buyPrice || 0));
+  }, 0);
+}
+
+function dashboardKpi(label, value, detail, tone = "green") {
+  return `
+    <article class="dash-kpi ${tone}">
+      <strong>${value}</strong>
+      <div><span>${label}</span><small>${detail}</small></div>
+    </article>
+  `;
+}
+
+function materialFunnel(rows) {
+  const filtered = rows.filter((row) => row.value > 0).slice(0, 5);
+  const source = filtered.length ? filtered : rows.slice(0, 4);
+  const max = Math.max(...source.map((row) => row.value), 1);
+  return `<div class="funnel">${source.map((row, index) => `
+    <div class="funnel-row" style="--w:${Math.max(34, (row.value / max) * 100)}%;--c:${index}">
+      <strong>${kg(row.value)}</strong><span>${row.label}</span>
+    </div>
+  `).join("")}</div>`;
+}
+
+function weeklyPurchaseSalesChart(dates, transactions) {
+  const rows = dates.map((date) => ({
+    date,
+    purchases: totalByType(transactions.filter((tx) => tx.date === date), "purchase"),
+    sales: totalByType(transactions.filter((tx) => tx.date === date), "sale"),
+  }));
+  const max = Math.max(...rows.flatMap((row) => [row.purchases, row.sales]), 1);
+  return `<div class="combo-chart">${rows.map((row) => `
+    <div class="combo-day">
+      <div class="combo-bars">
+        <span class="purchase" style="height:${Math.max(4, (row.purchases / max) * 100)}%"></span>
+        <span class="sale" style="height:${Math.max(4, (row.sales / max) * 100)}%"></span>
+      </div>
+      <small>${row.date.slice(5)}</small>
+    </div>
+  `).join("")}</div><div class="chart-legend"><span class="purchase"></span> Purchases <span class="sale"></span> Sales</div>`;
+}
+
+function weeklyCountChart(dates, transactions) {
+  const rows = dates.map((date) => ({
+    date,
+    value: transactions.filter((tx) => tx.date === date).length,
+  }));
+  const max = Math.max(...rows.map((row) => row.value), 1);
+  return `<div class="line-bars">${rows.map((row) => `
+    <div><span style="height:${Math.max(8, (row.value / max) * 100)}%"></span><strong>${row.value}</strong><small>${row.date.slice(5)}</small></div>
+  `).join("")}</div>`;
+}
+
+function stockValueChart() {
+  const rows = state.materials.map((material) => {
+    const value = visibleBranches().reduce((sum, branch) => sum + stockFor(branch.id, material.id) * material.sellPrice, 0);
+    return { label: material.name, value };
+  }).sort((a, b) => b.value - a.value);
+  const max = Math.max(...rows.map((row) => row.value), 1);
+  return `<div class="stock-value-chart">${rows.map((row) => `
+    <div class="stock-value-row"><strong>${row.label}</strong><div><span style="width:${Math.max(4, (row.value / max) * 100)}%"></span></div><em>${money(row.value)}</em></div>
+  `).join("")}</div>`;
 }
 
 function barChart(rows) {
@@ -506,14 +674,35 @@ function barChart(rows) {
 }
 
 function stockTable() {
-  const rows = [];
-  visibleBranches().forEach((branch) => {
-    state.materials.forEach((material) => {
-      const currentStock = stockFor(branch.id, material.id);
-      rows.push(`<tr><td>${material.name}</td><td class="num">${kg(currentStock)}</td><td class="amount">${money(currentStock * material.sellPrice)}</td><td>${branch.name}</td></tr>`);
-    });
-  });
+  const rows = stockPositionRows().map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`);
   return table(["Material", "Current Stock", "Estimated Value", "Location"], rows);
+}
+
+function stockPositionRows(filters = null) {
+  const filterValues = filters || { materialId: "all", branchId: "visible" };
+  const branches = filterValues.branchId === "all"
+    ? state.branches
+    : filterValues.branchId === "visible"
+      ? visibleBranches()
+      : state.branches.filter((branch) => branch.id === filterValues.branchId);
+  const materials = filterValues.materialId === "all"
+    ? state.materials
+    : state.materials.filter((material) => material.id === filterValues.materialId);
+  return branches.flatMap((branch) => materials.map((material) => {
+    const currentStockKg = stockFor(branch.id, material.id);
+    return {
+      branchId: branch.id,
+      materialId: material.id,
+      material: material.name,
+      category: material.category,
+      unit: material.unit,
+      currentStockKg,
+      buyingPricePerKilo: material.buyPrice,
+      sellingPricePerKilo: material.sellPrice,
+      estimatedValue: currentStockKg * material.sellPrice,
+      location: branch.name,
+    };
+  }));
 }
 
 function capitalFor(branchId, date = today()) {
@@ -526,12 +715,16 @@ function cashPosition(branchId, date = today()) {
   const transactions = state.transactions.filter((tx) => tx.branchId === branchId && tx.date === date);
   const cashRecord = cashOperationRecord(branchId, date);
   const capital = capitalFor(branchId, date);
+  const paidIn = cashMovementTotal(branchId, date, "paid_in") + Number(cashRecord?.paidIn || 0);
+  const paidOut = cashMovementTotal(branchId, date, "paid_out") + Number(cashRecord?.paidOut || 0);
   const cashSpent = transactions.filter((tx) => tx.type === "purchase").reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
   const cashReceived = transactions.filter((tx) => tx.type === "sale").reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
-  const expectedCash = capital - cashSpent + cashReceived;
+  const expectedCash = capital + paidIn - paidOut - cashSpent + cashReceived;
   const closeCash = cashRecord?.closeCash === "" || cashRecord?.closeCash == null ? null : Number(cashRecord.closeCash);
   return {
     capital,
+    paidIn,
+    paidOut,
     cashSpent,
     cashReceived,
     remaining: expectedCash,
@@ -543,108 +736,216 @@ function cashPosition(branchId, date = today()) {
 }
 
 function currentCapitalBranchId() {
-  return defaultBranchId();
+  const selected = state.cashOperationBranchId;
+  const visible = visibleBranches();
+  return visible.some((branch) => branch.id === selected) ? selected : defaultBranchId();
 }
 
 function cashOperationRecord(branchId, date = today()) {
   return state.dailyCapitals.find((capital) => capital.branchId === branchId && capital.date === date) || null;
 }
 
+function isCashOperationClosed(record) {
+  return Boolean(record?.status === "closed" || (record?.closeCash !== "" && record?.closeCash != null));
+}
+
+function cashMovementTotal(branchId, date, type) {
+  return state.cashMovements
+    .filter((movement) => movement.branchId === branchId && movement.date === date && movement.type === type)
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+}
+
+function cashMovementsFor(branchId, date = today()) {
+  return state.cashMovements.filter((movement) => movement.branchId === branchId && movement.date === date);
+}
+
 function attendanceView() {
-  const user = currentUser();
-  const openRecord = activeAttendanceRecords().find((record) => record.userId === user.id);
-  const action = openRecord ? "clock-out" : "clock-in";
-  return page("Attendance", "Clock in or clock out with a photo shot for attendance proof.", `
-    <section class="split">
-      <form class="panel" data-action="${action}">
-        <div class="panel-head"><h3>${openRecord ? "Clock out" : "Clock in"}</h3></div>
-        <div class="grid cards">
-          ${metric("User", user.name)}
-          ${metric("Operation", "Today")}
-          ${metric("Status", openRecord ? "On duty" : "Off duty")}
-          ${openRecord ? metric("Clock in time", timeLabel(openRecord.clockInAt)) : ""}
-        </div>
-        <div class="camera-box">
-          <video id="attendance-camera" autoplay playsinline></video>
-          <canvas id="attendance-canvas" width="360" height="270" class="hidden"></canvas>
-          <img id="attendance-preview" alt="Captured attendance photo" class="attendance-photo hidden">
-        </div>
-        <input type="hidden" name="photo" id="attendance-photo">
-        ${openRecord ? `<input type="hidden" name="recordId" value="${openRecord.id}">` : ""}
-        <div class="toolbar">
-          <button class="btn secondary" type="button" data-action="start-camera">Start camera</button>
-          <button class="btn secondary" type="button" data-action="capture-photo">Capture photo</button>
-          <label class="file-capture">Photo shot<input type="file" accept="image/*" capture="user" data-photo-file></label>
-          <button class="btn" type="submit">${openRecord ? "Clock out" : "Clock in"}</button>
-        </div>
-      </form>
+  const branchId = currentAttendanceBranchId();
+  const date = state.attendanceDate || today();
+  const employees = employeesForBranch(branchId);
+  const records = attendanceRecordsFor(branchId, date);
+  const editingRecord = state.attendanceRecords.find((record) => record.id === state.editingAttendanceId) || null;
+  return page("Attendance", "Admin-managed employee time in and time out by branch location.", `
+    <section class="grid">
+      ${attendanceForm(branchId, date, employees, editingRecord)}
       <div class="panel">
-        <div class="panel-head"><h3>My attendance today</h3></div>
-        ${attendanceTable(state.attendanceRecords.filter((record) => record.userId === user.id && record.date === today()))}
+        <div class="panel-head"><h3>Employees in this branch</h3><span class="mini-label">${branchName(branchId)}</span></div>
+        ${table(["Employee", "Position", "Rate", "Status"], employees.map((employee) => `
+          <tr><td>${employee.name}</td><td>${employee.position}</td><td class="amount">${money(employee.rate)}</td><td>${attendanceStatusFor(employee.id, records)}</td></tr>
+        `))}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Attendance records</h3><span class="mini-label">${date}</span></div>
+        ${attendanceTable(records)}
       </div>
     </section>
   `);
+}
+
+function currentAttendanceBranchId() {
+  const selected = state.attendanceBranchId;
+  const visible = visibleBranches();
+  return visible.some((branch) => branch.id === selected) ? selected : defaultBranchId();
+}
+
+function employeesForBranch(branchId) {
+  return state.employees.filter((employee) => employee.branchId === branchId && employee.status === "active");
+}
+
+function attendanceRecordsFor(branchId, date) {
+  return state.attendanceRecords.filter((record) => record.branchId === branchId && record.date === date);
+}
+
+function attendanceStatusFor(employeeId, records) {
+  const record = records.find((item) => item.employeeId === employeeId || item.userId === employeeId);
+  if (!record) return badge("off duty");
+  return badge(record.clockOutAt ? "completed" : "active");
+}
+
+function attendanceForm(branchId, date, employees, record = null) {
+  const formBranchId = record?.branchId || branchId;
+  const formDate = record?.date || date;
+  const formEmployees = employeesForBranch(formBranchId);
+  return `
+    <form class="panel" data-action="save-attendance">
+      <div class="panel-head">
+        <h3>${record ? `Edit attendance - ${employeeName(record.employeeId)}` : "Add attendance"}</h3>
+        ${record ? `<button class="btn secondary" type="button" data-action="cancel-attendance-edit">Cancel edit</button>` : ""}
+      </div>
+      ${record ? `<input type="hidden" name="id" value="${record.id}">` : ""}
+      <div class="form-grid">
+        <label>Date<input type="date" name="date" value="${formDate}" required data-attendance-date></label>
+        ${attendanceBranchSelect(formBranchId)}
+        ${attendanceEmployeeSelect(formEmployees, record?.employeeId)}
+        <label>Time in<input name="timeIn" type="time" value="${timeInputValue(record?.clockInAt)}" required></label>
+        <label>Time out<input name="timeOut" type="time" value="${timeInputValue(record?.clockOutAt)}"></label>
+        ${select("status", [["active", "On duty"], ["completed", "Completed"]], record?.clockOutAt ? "completed" : "active")}
+      </div>
+      <label style="margin-top:10px">Notes<textarea name="notes" placeholder="Optional attendance notes">${record?.notes || ""}</textarea></label>
+      <button class="btn" type="submit" style="margin-top:12px">${record ? "Save changes" : "Save attendance"}</button>
+    </form>
+  `;
+}
+
+function attendanceEmployeeSelect(employees, selectedValue = "") {
+  const options = employees.length
+    ? employees.map((employee) => `<option value="${employee.id}" ${selectedValue === employee.id ? "selected" : ""}>${employee.name} - ${employee.position}</option>`).join("")
+    : `<option value="">No active employees in this branch</option>`;
+  return `<label>Employee<select name="employeeId" required>${options}</select></label>`;
+}
+
+function attendanceBranchSelect(selectedValue = "") {
+  const branches = visibleBranches();
+  if (branches.length <= 1 && !isAdmin()) {
+    return `<input type="hidden" name="branchId" value="${selectedValue || defaultBranchId()}">`;
+  }
+  return `<label>Branch<select name="branchId" required data-attendance-branch>${branches.map((branch) => `<option value="${branch.id}" ${(selectedValue || defaultBranchId()) === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}</select></label>`;
 }
 
 function cashOperationView() {
   const branchId = currentCapitalBranchId();
-  const record = cashOperationRecord(branchId);
-  const position = cashPosition(branchId);
+  const selectedDate = state.cashOperationDate || today();
+  const savedRecord = cashOperationRecord(branchId, selectedDate);
+  const operationClosed = isCashOperationClosed(savedRecord);
+  const record = operationClosed ? null : savedRecord;
+  const position = record ? cashPosition(branchId, selectedDate) : emptyCashPosition();
   const openingStarted = position.capital > 0 || Boolean(record);
-  const txRows = state.transactions
-    .filter((tx) => tx.branchId === branchId && tx.date === today())
-    .slice()
-    .reverse()
-    .map((tx) => `
-      <tr><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td></tr>
-    `);
-  return page("Cash Operation", "Input opening cash before starting operations, close cash at end of day, and tally sales and expenses.", `
+  const cashMovementEnabled = openingStarted && !operationClosed;
+  const cashMovements = record ? cashMovementsFor(branchId, selectedDate) : [];
+  return page("Cash Operation", "Input opening cash, add paid in/out cash movements, close cash at end of day, and tally sales and expenses.", `
     <section class="grid">
-      <section class="cash-shift">
-        ${startingAmountForm(record, branchId)}
-        ${closeOperationForm(record, branchId, position, openingStarted)}
+      <section class="cash-entry-row">
+        ${startingAmountForm(record, branchId, selectedDate, operationClosed)}
+        ${cashMovementForm("paid_in", branchId, selectedDate, cashMovementEnabled, operationClosed)}
+        ${cashMovementForm("paid_out", branchId, selectedDate, cashMovementEnabled, operationClosed)}
+      </section>
+      <section class="cash-close-row">
+        ${closeOperationForm(record, branchId, selectedDate, position, openingStarted, operationClosed)}
       </section>
       <div class="panel">
-        <div class="panel-head"><h3>Today transaction tally</h3></div>
-        ${table(["No.", "Type", "Name", "Material", "Total", "Cash Paid"], txRows)}
+        <div class="panel-head"><h3>Paid in / paid out history</h3></div>
+        ${table(["Date", "Type", "Amount", "Notes", "User"], cashMovements.slice().reverse().map((movement) => `
+          <tr><td>${movement.date}</td><td>${badge(movement.type)}</td><td class="amount">${money(movement.amount)}</td><td>${movement.notes || ""}</td><td>${operatorName(movement.createdBy)}</td></tr>
+        `))}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Operational history</h3></div>
+        ${cashOperationalHistory(branchId)}
       </div>
     </section>
   `);
 }
 
-function startingAmountForm(record, branchId) {
+function emptyCashPosition() {
+  return {
+    capital: 0,
+    paidIn: 0,
+    paidOut: 0,
+    cashSpent: 0,
+    cashReceived: 0,
+    remaining: 0,
+    expectedCash: 0,
+    closeCash: null,
+    variance: null,
+    record: null,
+  };
+}
+
+function cashOperationDateInput(selectedDate) {
+  return `<label>Operation date<input type="date" name="date" value="${selectedDate}" required data-cash-operation-date></label>`;
+}
+
+function startingAmountForm(record, branchId, selectedDate, operationClosed = false) {
   const openingCash = record?.openingCash ?? record?.amount ?? "";
   return `
     <form class="panel shift-card starting-card" data-action="save-cash-operation">
-      <div class="panel-head"><h3>Starting amount</h3><span class="shift-status">${record ? "Opened" : "Before operation"}</span></div>
+      <div class="panel-head"><h3>Starting amount</h3><span class="shift-status">${operationClosed ? "Closed" : record ? "Opened" : "Before operation"}</span></div>
       <p class="shift-copy">Specify cash amount at the beginning of operation.</p>
-      <input type="hidden" name="date" value="${record?.date || today()}">
+      ${cashOperationDateInput(selectedDate)}
       ${branchSelect("branchId", "Branch", false, record?.branchId || branchId)}
       <input type="hidden" name="closeCash" value="${record?.closeCash ?? ""}">
       <label>Amount<input class="cash-amount-input" name="openingCash" type="number" value="${openingCash}" step="0.01" min="0" required></label>
       <label style="margin-top:10px">Notes<textarea name="notes" placeholder="Opening fund notes">${record?.notes || ""}</textarea></label>
       <button class="btn shift-action" type="submit">${record ? "Update starting amount" : "Open operation"}</button>
+      ${operationClosed ? `<div class="notice" style="margin-top:12px">This operation is closed. Start a new record on the next operating day.</div>` : ""}
     </form>
   `;
 }
 
-function closeOperationForm(record, branchId, position, openingStarted) {
+function closeOperationForm(record, branchId, selectedDate, position, openingStarted, operationClosed = false) {
   return `
-    <form class="panel shift-card" data-action="save-cash-operation">
+    <form class="panel shift-card" data-action="close-cash-operation">
       <div class="panel-head">
         <h3>Close operation</h3>
-        <button class="btn secondary" type="button" data-print-cash-operation="${branchId}">Print receipt</button>
+        <button class="btn secondary" type="button" data-print-cash-operation="${branchId}" data-print-cash-date="${selectedDate}">Print receipt</button>
       </div>
-      <input type="hidden" name="date" value="${record?.date || today()}">
+      ${cashOperationDateInput(selectedDate)}
       ${branchSelect("branchId", "Branch", false, record?.branchId || branchId)}
       <input type="hidden" name="openingCash" value="${record?.openingCash ?? record?.amount ?? 0}">
-      <label>Close cash<input class="cash-amount-input" name="closeCash" type="number" value="${record?.closeCash ?? ""}" step="0.01" min="0" ${openingStarted ? "" : "disabled"}></label>
-      <input type="hidden" name="notes" value="${escapeHtml(record?.notes || "")}">
+      <label style="margin-bottom:10px">Notes<textarea name="notes" placeholder="Add notes before saving this cash transaction" ${operationClosed ? "disabled" : ""}>${record?.notes || ""}</textarea></label>
+      <label>Close cash<input class="cash-amount-input" name="closeCash" type="number" value="${record?.closeCash ?? ""}" step="0.01" min="0" required ${openingStarted && !operationClosed ? "" : "disabled"}></label>
       <div class="cash-lines">
         ${cashSummaryRows(position)}
       </div>
-      <button class="btn shift-action" type="submit" ${openingStarted ? "" : "disabled"}>Close operation</button>
+      <button class="btn shift-action" type="submit" ${openingStarted && !operationClosed ? "" : "disabled"}>${operationClosed ? "Operation closed" : "Close operation"}</button>
       ${openingStarted ? "" : `<div class="notice" style="margin-top:12px">Enter the starting amount first before closing the operation.</div>`}
+      ${operationClosed ? `<div class="notice" style="margin-top:12px">Closed record saved for ${record?.date || today()}.</div>` : ""}
+    </form>
+  `;
+}
+
+function cashMovementForm(type, branchId, selectedDate, openingStarted, operationClosed = false) {
+  const isPaidIn = type === "paid_in";
+  return `
+    <form class="panel" data-action="add-cash-movement">
+      <div class="panel-head"><h3>${isPaidIn ? "Paid in" : "Paid out"}</h3></div>
+      <input type="hidden" name="type" value="${type}">
+      ${cashOperationDateInput(selectedDate)}
+      ${branchSelect("branchId", "Branch", false, branchId)}
+      ${numberInput("amount", "Amount", "0", "0.01", true)}
+      <label style="margin-top:10px">Notes<textarea name="notes" placeholder="${isPaidIn ? "Example: additional fund" : "Example: cash expense"}" required ${operationClosed ? "disabled" : ""}></textarea></label>
+      <button class="btn ${isPaidIn ? "" : "warning"}" type="submit" style="margin-top:12px" ${openingStarted ? "" : "disabled"}>${isPaidIn ? "Save paid in" : "Save paid out"}</button>
+      ${operationClosed ? `<div class="notice" style="margin-top:12px">This operation is already closed.</div>` : openingStarted ? "" : `<div class="notice" style="margin-top:12px">Enter the starting amount first before adding cash movements.</div>`}
     </form>
   `;
 }
@@ -655,36 +956,113 @@ function cashSummaryRows(position) {
     ["Starting cash", money(position.capital)],
     ["Cash payments", money(position.cashReceived)],
     ["Cash purchases", money(position.cashSpent)],
-    ["Paid in", money(0)],
-    ["Paid out", money(position.cashSpent)],
+    ["Paid in", money(position.paidIn)],
+    ["Paid out", money(position.paidOut)],
     ["Expected amount of cash", money(position.expectedCash), true],
     ["Ending balance", position.closeCash == null ? "Not closed" : money(position.closeCash), true],
     ["Variance", position.variance == null ? "Not closed" : money(position.variance)],
   ].map(([label, value, strong]) => `<div class="cash-line ${strong ? "strong" : ""}"><span>${label}</span><strong>${value}</strong></div>`).join("");
 }
 
+function cashOperationalHistory(branchId) {
+  const rows = state.dailyCapitals
+    .filter((record) => record.branchId === branchId)
+    .slice()
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .map((record) => {
+      const position = cashPosition(record.branchId, record.date);
+      const status = record.status === "closed" || position.closeCash != null ? "closed" : "open";
+      return `
+        <tr>
+          <td><button class="btn secondary" data-print-cash-operation="${record.branchId}" data-print-cash-date="${record.date}">Print</button></td>
+          <td>${record.date}</td>
+          <td>${badge(status)}</td>
+          <td class="amount">${money(position.capital)}</td>
+          <td class="amount">${money(position.paidIn)}</td>
+          <td class="amount">${money(position.paidOut)}</td>
+          <td class="amount">${money(position.cashReceived)}</td>
+          <td class="amount">${money(position.cashSpent)}</td>
+          <td class="amount">${money(position.expectedCash)}</td>
+          <td class="amount">${position.closeCash == null ? "" : money(position.closeCash)}</td>
+          <td class="amount">${position.variance == null ? "" : money(position.variance)}</td>
+          <td>${operatorName(record.closedBy || record.updatedBy || record.createdBy)}</td>
+        </tr>
+      `;
+    });
+  return table(["Action", "Date", "Status", "Starting", "Paid in", "Paid out", "Sales cash", "Purchase cash", "Expected", "Ending", "Variance", "User"], rows);
+}
+
 function reviewAttendanceView() {
-  const records = activeAttendanceRecords().filter((record) => record.branchId === defaultBranchId());
+  const branchId = currentAttendanceBranchId();
+  const records = activeAttendanceRecords().filter((record) => record.branchId === branchId);
   return page("Review Attendance", "Current list of employees who are on duty.", `
-    <section class="panel">
-      <div class="panel-head"><h3>On duty now</h3></div>
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-head"><h3>Filters</h3></div>
+        <div class="form-grid">
+          ${attendanceBranchSelect(branchId)}
+        </div>
+      </div>
+      <div class="panel">
+      <div class="panel-head"><h3>On duty now</h3><span class="mini-label">${branchName(branchId)}</span></div>
       ${attendanceTable(records)}
+      </div>
     </section>
   `);
 }
 
 function attendanceTable(records) {
-  return table(["Employee", "Clock In", "Clock Out", "Status", "Photo"], records.slice().reverse().map((record) => `
-    <tr><td>${record.userName}</td><td>${timeLabel(record.clockInAt)}</td><td>${record.clockOutAt ? timeLabel(record.clockOutAt) : ""}</td><td>${badge(record.clockOutAt ? "completed" : "active")}</td><td>${record.clockInPhoto ? `<img class="thumb" src="${record.clockOutPhoto || record.clockInPhoto}" alt="Attendance photo">` : ""}</td></tr>
-  `));
+  return table(["Action", "Employee", "Branch", "Date", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status", "Notes"], records.slice().reverse().map((record) => {
+    const hours = attendanceHours(record);
+    return `
+      <tr class="${state.editingAttendanceId === record.id ? "row-editing" : ""}">
+        <td><button class="btn secondary" data-edit-attendance="${record.id}">Edit</button></td>
+        <td>${record.employeeName || employeeName(record.employeeId) || record.userName}</td>
+        <td>${branchName(record.branchId)}</td>
+        <td>${record.date}</td>
+        <td>${timeOnlyLabel(record.clockInAt)}</td>
+        <td>${record.clockOutAt ? timeOnlyLabel(record.clockOutAt) : ""}</td>
+        <td class="num">${hours.regular.toFixed(2)}</td>
+        <td class="num">${hours.overtime.toFixed(2)}</td>
+        <td>${badge(record.clockOutAt ? "completed" : "active")}</td>
+        <td>${record.notes || ""}</td>
+      </tr>
+    `;
+  }));
 }
 
 function activeAttendanceRecords() {
   return state.attendanceRecords.filter((record) => !record.clockOutAt);
 }
 
+function attendanceDateTime(date, time) {
+  return time ? `${date}T${time}:00` : "";
+}
+
+function attendanceHours(record) {
+  if (!record?.clockInAt || !record?.clockOutAt) return { gross: 0, paid: 0, regular: 0, overtime: 0 };
+  const gross = Math.max((new Date(record.clockOutAt) - new Date(record.clockInAt)) / 36e5, 0);
+  const paid = Math.max(gross - 1, 0);
+  return {
+    gross,
+    paid,
+    regular: Math.min(paid, 8),
+    overtime: Math.max(paid - 8, 0),
+  };
+}
+
 function timeLabel(value) {
   return value ? new Date(value).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }) : "";
+}
+
+function timeOnlyLabel(value) {
+  return value ? new Date(value).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+function timeInputValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function printReceipt(transactionId) {
@@ -809,13 +1187,13 @@ function receiptHtml(transactions, receiptNumber = null) {
   `;
 }
 
-function printCashOperation(branchId) {
+function printCashOperation(branchId, date = today()) {
   const receiptWindow = window.open("", "_blank", "width=460,height=760");
   if (!receiptWindow) {
     alert("Please allow pop-ups to print the cash operation receipt.");
     return;
   }
-  receiptWindow.document.write(cashOperationReceiptHtml(branchId, today()));
+  receiptWindow.document.write(cashOperationReceiptHtml(branchId, date));
   receiptWindow.document.close();
   receiptWindow.focus();
 }
@@ -891,7 +1269,7 @@ function deliveryReceiptHtml(delivery) {
           <div class="row"><span>Operator</span><strong>${escapeHtml(operator)}</strong></div>
           <div class="row"><span>Truck plate</span><strong>${escapeHtml(delivery.truck)}</strong></div>
           <div class="row"><span>Driver</span><strong>${escapeHtml(delivery.driver)}</strong></div>
-          <div class="row"><span>Destination</span><strong>${escapeHtml(delivery.destinationName || "External")}</strong></div>
+          <div class="row"><span>Destination</span><strong>${escapeHtml(deliveryDestinationName(delivery))}</strong></div>
           <div class="row"><span>Status</span><strong>${escapeHtml(delivery.status)}</strong></div>
           <div class="line"></div>
           <table>
@@ -1058,6 +1436,7 @@ function cashOperationReceiptHtml(branchId, date) {
   const position = cashPosition(branchId, date);
   const record = cashOperationRecord(branchId, date);
   const cashier = currentUser();
+  const movements = cashMovementsFor(branchId, date);
   return `
     <!doctype html>
     <html>
@@ -1102,8 +1481,14 @@ function cashOperationReceiptHtml(branchId, date) {
           <div class="line"></div>
           <div class="row"><span>Prepared by</span><strong>${escapeHtml(cashier?.name || "Unknown")}</strong></div>
           <div class="row"><span>Opening cash</span><strong>${money(position.capital)}</strong></div>
+          <div class="row"><span>Paid in</span><strong>${money(position.paidIn)}</strong></div>
+          <div class="row"><span>Paid out</span><strong>${money(position.paidOut)}</strong></div>
           <div class="row"><span>Sales cash received</span><strong>${money(position.cashReceived)}</strong></div>
           <div class="row"><span>Purchase cash expenses</span><strong>${money(position.cashSpent)}</strong></div>
+          ${movements.length ? `
+            <div class="line"></div>
+            ${movements.map((movement) => `<div class="row"><span>${movement.type === "paid_in" ? "Paid in" : "Paid out"} - ${escapeHtml(movement.notes || "")}</span><strong>${money(movement.amount)}</strong></div>`).join("")}
+          ` : ""}
           <div class="line"></div>
           <div class="row total"><span>Expected cash</span><strong>${money(position.expectedCash)}</strong></div>
           <div class="row total"><span>Ending balance</span><strong>${position.closeCash == null ? "Not closed" : money(position.closeCash)}</strong></div>
@@ -1193,11 +1578,22 @@ function customerTransactionGroups(transactions) {
 
 function inventoryView() {
   const movements = branchFilter(state.stockMovements);
+  const filters = state.inventoryFilters || { materialId: "all", branchId: "all" };
   return page("Inventory", "Current stock is calculated from all stock movement records.", `
     <section class="grid">
       <div class="panel">
         <div class="panel-head"><h3>Stock position</h3><button class="btn secondary" data-export-excel="inventory">Download Excel</button></div>
-        ${stockTable()}
+        <div class="form-grid" style="margin-bottom:12px">
+          <label>Material<select data-inventory-filter="materialId">
+            <option value="all" ${filters.materialId === "all" ? "selected" : ""}>All materials</option>
+            ${state.materials.map((material) => `<option value="${material.id}" ${filters.materialId === material.id ? "selected" : ""}>${material.name}</option>`).join("")}
+          </select></label>
+          <label>Location<select data-inventory-filter="branchId">
+            <option value="all" ${filters.branchId === "all" ? "selected" : ""}>All locations</option>
+            ${state.branches.map((branch) => `<option value="${branch.id}" ${filters.branchId === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}
+          </select></label>
+        </div>
+        ${table(["Material", "Current Stock", "Estimated Value", "Location"], stockPositionRows(filters).map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`))}
       </div>
       <div class="panel">
         <div class="panel-head">
@@ -1258,7 +1654,7 @@ function deliveryRecordGroups(deliveries) {
         <div class="customer-head">
           <div>
             <h3>${escapeHtml(delivery.number)} - ${escapeHtml(delivery.truck)}</h3>
-            <small>${escapeHtml(delivery.date)} - ${escapeHtml(delivery.destinationName || "External")} - ${escapeHtml(delivery.driver)} - Operator: ${escapeHtml(operatorName(delivery.createdBy || delivery.updatedBy))}</small>
+            <small>${escapeHtml(delivery.date)} - ${escapeHtml(deliveryDestinationName(delivery))} - ${escapeHtml(delivery.driver)} - Operator: ${escapeHtml(operatorName(delivery.createdBy || delivery.updatedBy))}</small>
           </div>
           <div class="toolbar" style="margin-bottom:0">
             <button class="btn secondary" data-edit-delivery="${delivery.id}">Edit</button>
@@ -1279,6 +1675,7 @@ function deliveryForm(delivery = null) {
   const action = delivery ? "update-delivery" : "add-delivery";
   const repeatDelivery = !delivery && state.repeatDeliveryId ? state.deliveries.find((item) => item.id === state.repeatDeliveryId) : null;
   const source = delivery || repeatDelivery;
+  const destinationKey = source?.destinationContactId ? `contact:${source.destinationContactId}` : source?.destinationBranchId ? `branch:${source.destinationBranchId}` : "";
   return `
     <form class="panel" data-action="${action}">
       <div class="panel-head">
@@ -1290,8 +1687,7 @@ function deliveryForm(delivery = null) {
       <div class="form-grid">
         ${dateInput("date", source?.date || today())}
         ${branchSelect("sourceBranchId", "Source branch", false, source?.sourceBranchId)}
-        ${branchSelect("destinationBranchId", "Destination", true, "")}
-        <label>Destination<input name="destinationName" type="text" value="${source?.destinationName || ""}"></label>
+        ${destinationSelect(destinationKey)}
         ${input("truck", "Truck plate number", "text", source?.truck || "")}
         ${input("driver", "Driver name", "text", source?.driver || "")}
         ${select("status", [["pending", "Pending"], ["in_transit", "In transit"], ["completed", "Completed"], ["cancelled", "Cancelled"]], source?.status)}
@@ -1328,7 +1724,7 @@ function deliveryRecordRows() {
   return state.deliveries.flatMap((delivery) => deliveryLines(delivery).map((line) => ({
     deliveryNumber: delivery.number,
     date: delivery.date,
-    destination: delivery.destinationName || "External",
+    destination: deliveryDestinationName(delivery),
     truck: delivery.truck,
     driver: delivery.driver,
     operator: operatorName(delivery.createdBy || delivery.updatedBy),
@@ -1484,6 +1880,10 @@ function payrollView() {
         <div class="panel-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Download all payrolls</button></div>
         ${payrollSummaryTable()}
       </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Attendance payroll tracker</h3><span class="mini-label">Regular and O.T hours</span></div>
+        ${attendancePayrollTracker()}
+      </div>
       <div class="split">
         <div class="panel">
           <div class="panel-head"><h3>Employee payroll details</h3><button class="btn secondary" data-view="employees">Maintain employees</button></div>
@@ -1597,6 +1997,25 @@ function payrollSummaryTable() {
   `));
 }
 
+function attendancePayrollTracker() {
+  const records = branchFilter(state.attendanceRecords).slice().sort((a, b) => `${b.date}${b.clockInAt}`.localeCompare(`${a.date}${a.clockInAt}`));
+  return table(["Date", "Employee", "Branch", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status"], records.map((record) => {
+    const hours = attendanceHours(record);
+    return `
+      <tr>
+        <td>${record.date}</td>
+        <td>${record.employeeName || employeeName(record.employeeId) || record.userName}</td>
+        <td>${branchName(record.branchId)}</td>
+        <td>${timeOnlyLabel(record.clockInAt)}</td>
+        <td>${record.clockOutAt ? timeOnlyLabel(record.clockOutAt) : ""}</td>
+        <td class="num">${hours.regular.toFixed(2)}</td>
+        <td class="num">${hours.overtime.toFixed(2)}</td>
+        <td>${badge(record.clockOutAt ? "completed" : "active")}</td>
+      </tr>
+    `;
+  }));
+}
+
 const payrollIncomeFields = ["basicPay", "adjustment", "nightDiffAmount", "overtimeAmount", "restDayAmount", "specialHolidayAmount", "regularHolidayAmount", "taxableAllowance", "incentives", "commission", "transpoAllowance", "clothingAllowance", "mealAllowance", "nta", "bonus"];
 const payrollDeductionFields = ["lateDeduction", "absentDeduction", "hmo", "sss", "sssMpf", "philHealth", "hdmf", "sssSalaryLoan", "sssCalamityLoan", "hdmfMpl", "hdmfCalamityLoan", "companyLoan", "tax", "cashAdvanceDeduction"];
 
@@ -1664,7 +2083,10 @@ function reportsView() {
         <div class="form-grid">
           <label>From date<input data-report-filter="from" type="date" value="${filters.from}"></label>
           <label>To date<input data-report-filter="to" type="date" value="${filters.to}"></label>
-          <input type="hidden" data-report-filter="branchId" value="${defaultBranchId()}">
+          <label>Branch<select data-report-filter="branchId">
+            <option value="all" ${filters.branchId === "all" ? "selected" : ""}>All branches</option>
+            ${visibleBranches().map((branch) => `<option value="${branch.id}" ${filters.branchId === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}
+          </select></label>
         </div>
       </div>
       <div class="panel">
@@ -1701,25 +2123,101 @@ function filteredReportTransactions() {
   return branchFilter(state.transactions).filter((tx) => {
     const afterFrom = !filters.from || tx.date >= filters.from;
     const beforeTo = !filters.to || tx.date <= filters.to;
-    const inBranch = tx.branchId === defaultBranchId();
+    const inBranch = filters.branchId === "all" || tx.branchId === filters.branchId;
     return afterFrom && beforeTo && inBranch;
   });
 }
 
 function inventoryRows() {
-  return visibleBranches().flatMap((branch) => state.materials.map((material) => {
-    const currentStockKg = stockFor(branch.id, material.id);
-    return {
-      material: material.name,
-      category: material.category,
-      unit: material.unit,
-      currentStockKg,
-      buyingPricePerKilo: material.buyPrice,
-      sellingPricePerKilo: material.sellPrice,
-      estimatedValue: currentStockKg * material.sellPrice,
-      location: branch.name,
-    };
-  }));
+  return stockPositionRows(state.inventoryFilters || { materialId: "all", branchId: "all" }).map(({ branchId, materialId, ...row }) => row);
+}
+
+function branchesView() {
+  const editingBranch = state.branches.find((branch) => branch.id === state.editingBranchId) || null;
+  return page("Location Maintenance", "Maintain branches and operating locations for multi-branch ScrapWise setup.", `
+    <section class="split">
+      ${branchForm(editingBranch)}
+      <div class="panel">
+        <div class="panel-head"><h3>Locations</h3></div>
+        ${table(["Action", "Code", "Location", "Address", "Contact", "Status"], state.branches.map((branch) => `
+          <tr class="${state.editingBranchId === branch.id ? "row-editing" : ""}">
+            <td><button class="btn secondary" data-edit-branch="${branch.id}">Edit</button> <button class="btn danger" data-delete-branch="${branch.id}">Delete</button></td>
+            <td>${branch.code}</td>
+            <td>${branch.name}</td>
+            <td>${branch.address || ""}</td>
+            <td>${branch.contact || ""}</td>
+            <td>${badge(branch.status)}</td>
+          </tr>
+        `))}
+      </div>
+    </section>
+  `);
+}
+
+function branchForm(branch = null) {
+  const action = branch ? "update-branch" : "add-branch";
+  return `
+    <form class="panel" data-action="${action}">
+      <div class="panel-head">
+        <h3>${branch ? `Edit ${branch.name}` : "Add location"}</h3>
+        ${branch ? `<button class="btn secondary" type="button" data-action="cancel-branch-edit">Cancel edit</button>` : ""}
+      </div>
+      ${branch ? `<input type="hidden" name="id" value="${branch.id}">` : ""}
+      <div class="form-grid">
+        ${input("code", "Code", "text", branch?.code || "")}
+        ${input("name", "Location name", "text", branch?.name || "")}
+        ${input("contact", "Contact number", "text", branch?.contact || "")}
+        ${select("status", [["active", "Active"], ["inactive", "Inactive"]], branch?.status || "active")}
+      </div>
+      <label style="margin-top:10px">Address<textarea name="address" placeholder="Full branch address">${branch?.address || ""}</textarea></label>
+      <button class="btn" type="submit" style="margin-top:12px">${branch ? "Save changes" : "Save location"}</button>
+    </form>
+  `;
+}
+
+function destinationsView() {
+  const editingDestination = (state.destinations || []).find((destination) => destination.id === state.editingDestinationId) || null;
+  return page("Destination Maintenance", "Maintain delivery and buyer contacts where scrap can be delivered or sold.", `
+    <section class="split">
+      ${destinationForm(editingDestination)}
+      <div class="panel">
+        <div class="panel-head"><h3>Destinations</h3></div>
+        ${table(["Action", "Type", "Destination", "Contact", "Address", "Notes", "Status"], (state.destinations || []).map((destination) => `
+          <tr class="${state.editingDestinationId === destination.id ? "row-editing" : ""}">
+            <td><button class="btn secondary" data-edit-destination="${destination.id}">Edit</button> <button class="btn danger" data-delete-destination="${destination.id}">Delete</button></td>
+            <td>${badge(destination.type)}</td>
+            <td>${destination.name}</td>
+            <td>${destination.contact || ""}</td>
+            <td>${destination.address || ""}</td>
+            <td>${destination.notes || ""}</td>
+            <td>${badge(destination.status)}</td>
+          </tr>
+        `))}
+      </div>
+    </section>
+  `);
+}
+
+function destinationForm(destination = null) {
+  const action = destination ? "update-destination" : "add-destination";
+  return `
+    <form class="panel" data-action="${action}">
+      <div class="panel-head">
+        <h3>${destination ? `Edit ${destination.name}` : "Add destination"}</h3>
+        ${destination ? `<button class="btn secondary" type="button" data-action="cancel-destination-edit">Cancel edit</button>` : ""}
+      </div>
+      ${destination ? `<input type="hidden" name="id" value="${destination.id}">` : ""}
+      <div class="form-grid">
+        ${select("type", [["buyer", "Buyer"], ["warehouse", "Warehouse"], ["processor", "Processor"], ["other", "Other"]], destination?.type || "buyer")}
+        ${input("name", "Destination name", "text", destination?.name || "")}
+        ${input("contact", "Contact number", "text", destination?.contact || "")}
+        ${select("status", [["active", "Active"], ["inactive", "Inactive"]], destination?.status || "active")}
+      </div>
+      <label style="margin-top:10px">Address<textarea name="address" placeholder="Delivery or buyer address">${destination?.address || ""}</textarea></label>
+      <label style="margin-top:10px">Notes<textarea name="notes" placeholder="Terms, contact person, delivery instruction">${destination?.notes || ""}</textarea></label>
+      <button class="btn" type="submit" style="margin-top:12px">${destination ? "Save changes" : "Save destination"}</button>
+    </form>
+  `;
 }
 
 function usersView() {
@@ -1728,8 +2226,8 @@ function usersView() {
     <section class="split">
       ${userForm(editingUser)}
       <div class="panel">
-        ${table(["Action", "Name", "Email", "Role", "Status"], state.users.map((user) => `
-          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${user.name}</td><td>${user.email}</td><td>${roles[user.role]}</td><td>${badge(user.status)}</td></tr>
+        ${table(["Action", "Name", "Email", "Role", "Branch", "Status"], state.users.map((user) => `
+          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${user.name}</td><td>${user.email}</td><td>${roles[user.role]}</td><td>${branchName(user.branchId)}</td><td>${badge(user.status)}</td></tr>
         `))}
       </div>
     </section>
@@ -1764,7 +2262,7 @@ function table(headers, rows) {
 
 function badge(text) {
   const safe = String(text || "").replaceAll("_", " ");
-  const className = ["paid", "active", "completed", "approved"].includes(text) ? "good" : ["partial", "pending", "draft", "in_transit"].includes(text) ? "warn" : ["unpaid", "inactive", "cancelled"].includes(text) ? "danger" : "";
+  const className = ["paid", "active", "completed", "approved", "closed"].includes(text) ? "good" : ["partial", "pending", "draft", "in_transit", "open"].includes(text) ? "warn" : ["unpaid", "inactive", "cancelled"].includes(text) ? "danger" : "";
   return `<span class="badge ${className}">${safe}</span>`;
 }
 
@@ -1785,12 +2283,28 @@ function select(name, options, selectedValue = "") {
 }
 
 function branchSelect(name, labelText = "Branch", includeBlank = false, selectedValue = "") {
-  const value = includeBlank ? "" : defaultBranchId();
-  return `<input type="hidden" name="${name}" value="${value}">`;
+  const branches = includeBlank ? state.branches.filter((branch) => branch.status === "active") : visibleBranches();
+  const fallbackValue = includeBlank ? "" : selectedValue || defaultBranchId();
+  if (!includeBlank && branches.length <= 1 && !isAdmin()) {
+    return `<input type="hidden" name="${name}" value="${fallbackValue}">`;
+  }
+  const blank = includeBlank ? `<option value="">Select ${labelText.toLowerCase()}</option>` : "";
+  return `<label>${t(labelText)}<select name="${name}" ${includeBlank ? "" : "required"}>${blank}${branches.map((branch) => `<option value="${branch.id}" ${(selectedValue || fallbackValue) === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}</select></label>`;
 }
 
 function partySelect(name, selectedValue = "") {
   return `<label>Customer or supplier<select name="${name}">${state.parties.filter((party) => party.status === "active").map((party) => `<option value="${party.id}" ${selectedValue === party.id ? "selected" : ""}>${party.name} (${party.type})</option>`).join("")}</select></label>`;
+}
+
+function destinationSelect(selectedValue = "") {
+  const branchOptions = state.branches
+    .filter((branch) => branch.status === "active")
+    .map((branch) => [`branch:${branch.id}`, `${branch.name} (branch)`]);
+  const contactOptions = (state.destinations || [])
+    .filter((destination) => destination.status === "active")
+    .map((destination) => [`contact:${destination.id}`, `${destination.name} (${destination.type})`]);
+  const options = [...branchOptions, ...contactOptions];
+  return `<label>Destination<select name="destinationKey" required><option value="">Select destination</option>${options.map(([value, text]) => `<option value="${value}" ${selectedValue === value ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
 }
 
 function materialSelect(name, selectedValue = "", required = true) {
@@ -1824,14 +2338,6 @@ function bindEvents() {
       state.language = button.dataset.language;
       saveState();
       render();
-    });
-  });
-
-  document.querySelectorAll("[data-demo]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const form = button.closest("form");
-      form.email.value = button.dataset.demo;
-      form.password.value = state.users.find((user) => user.email === button.dataset.demo).password;
     });
   });
 
@@ -1940,6 +2446,46 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-edit-branch]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingBranchId = button.dataset.editBranch;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='cancel-branch-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingBranchId = null;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-delete-branch]").forEach((button) => {
+    button.addEventListener("click", () => deleteBranch(button.dataset.deleteBranch));
+  });
+
+  document.querySelectorAll("[data-edit-destination]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingDestinationId = button.dataset.editDestination;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='cancel-destination-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingDestinationId = null;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-delete-destination]").forEach((button) => {
+    button.addEventListener("click", () => deleteDestination(button.dataset.deleteDestination));
+  });
+
   document.querySelectorAll("[data-edit-user]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingUserId = button.dataset.editUser;
@@ -1980,6 +2526,26 @@ function bindEvents() {
     button.addEventListener("click", () => deleteEmployee(button.dataset.deleteEmployee));
   });
 
+  document.querySelectorAll("[data-edit-attendance]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const record = state.attendanceRecords.find((item) => item.id === button.dataset.editAttendance);
+      if (!record) return;
+      state.editingAttendanceId = record.id;
+      state.attendanceDate = record.date;
+      state.attendanceBranchId = record.branchId;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='cancel-attendance-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingAttendanceId = null;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-edit-payroll]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingPayrollId = button.dataset.editPayroll;
@@ -2000,20 +2566,40 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll("[data-action='start-camera']").forEach((button) => {
-    button.addEventListener("click", () => startAttendanceCamera());
+  document.querySelectorAll("[data-attendance-date]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.attendanceDate = field.value || today();
+      saveState();
+      render();
+    });
   });
 
-  document.querySelectorAll("[data-action='capture-photo']").forEach((button) => {
-    button.addEventListener("click", () => captureAttendancePhoto());
-  });
-
-  document.querySelectorAll("[data-photo-file]").forEach((inputEl) => {
-    inputEl.addEventListener("change", () => loadAttendancePhotoFile(inputEl));
+  document.querySelectorAll("[data-attendance-branch]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.attendanceBranchId = field.value || defaultBranchId();
+      saveState();
+      render();
+    });
   });
 
   document.querySelectorAll("[data-print-cash-operation]").forEach((button) => {
-    button.addEventListener("click", () => printCashOperation(button.dataset.printCashOperation));
+    button.addEventListener("click", () => printCashOperation(button.dataset.printCashOperation, button.dataset.printCashDate || today()));
+  });
+
+  document.querySelectorAll("[data-cash-operation-date]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.cashOperationDate = field.value || today();
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("form[data-action='save-cash-operation'] select[name='branchId'], form[data-action='close-cash-operation'] select[name='branchId'], form[data-action='add-cash-movement'] select[name='branchId']").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.cashOperationBranchId = field.value || defaultBranchId();
+      saveState();
+      render();
+    });
   });
 
   document.querySelectorAll("[data-transaction-form]").forEach((form) => {
@@ -2036,6 +2622,15 @@ function bindEvents() {
     document.getElementById("party-list").innerHTML = partyTable(filtered);
   });
 
+  document.querySelectorAll("[data-inventory-filter]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.inventoryFilters = state.inventoryFilters || { materialId: "all", branchId: "all" };
+      state.inventoryFilters[field.dataset.inventoryFilter] = field.value;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-report-filter]").forEach((field) => {
     field.addEventListener("change", () => {
       state.reportFilters = state.reportFilters || { from: "", to: "", branchId: "all" };
@@ -2049,9 +2644,10 @@ function bindEvents() {
 function handleForm(action, data) {
   const handlers = {
     login: login,
-    "clock-in": clockIn,
-    "clock-out": clockOut,
+    "save-attendance": saveAttendance,
     "save-cash-operation": saveCashOperation,
+    "close-cash-operation": closeCashOperation,
+    "add-cash-movement": addCashMovement,
     "add-transaction": addTransaction,
     "update-transaction": updateTransaction,
     "add-adjustment": addAdjustment,
@@ -2061,6 +2657,10 @@ function handleForm(action, data) {
     "update-party": updateParty,
     "add-material": addMaterial,
     "update-material": updateMaterial,
+    "add-branch": addBranch,
+    "update-branch": updateBranch,
+    "add-destination": addDestination,
+    "update-destination": updateDestination,
     "add-payroll": addPayroll,
     "update-payroll": updatePayroll,
     "add-employee": addEmployee,
@@ -2084,95 +2684,57 @@ function login(data) {
   render();
 }
 
-function clockIn(data) {
-  if (!data.photo) {
-    alert("Capture a photo before clocking in.");
+function saveAttendance(data) {
+  const employee = state.employees.find((item) => item.id === data.employeeId);
+  if (!employee) {
+    alert("Select an employee.");
     return;
   }
-  const user = currentUser();
-  if (activeAttendanceRecords().some((record) => record.userId === user.id)) {
-    alert("You are already clocked in.");
+  if (employee.branchId !== data.branchId) {
+    alert("Selected employee does not belong to this branch.");
     return;
   }
-  state.attendanceRecords.push({
-    id: id("att"),
-    userId: user.id,
-    userName: user.name,
-    branchId: user.branchId,
-    date: today(),
-    clockInAt: new Date().toISOString(),
-    clockInPhoto: data.photo,
-    clockOutAt: "",
-    clockOutPhoto: "",
-  });
-  stopAttendanceCamera();
-  saveState();
-  render();
-}
-
-function clockOut(data) {
-  if (!data.photo) {
-    alert("Capture a photo before clocking out.");
+  if (data.status === "completed" && !data.timeOut) {
+    alert("Enter time out when status is completed.");
     return;
   }
-  const record = state.attendanceRecords.find((item) => item.id === data.recordId);
-  if (!record) return;
-  record.clockOutAt = new Date().toISOString();
-  record.clockOutPhoto = data.photo;
-  stopAttendanceCamera();
-  saveState();
-  render();
-}
-
-async function startAttendanceCamera() {
-  const video = document.getElementById("attendance-camera");
-  if (!video || !navigator.mediaDevices?.getUserMedia) {
-    alert("Camera is not available in this browser. Use the Photo shot file button instead.");
+  const clockInAt = attendanceDateTime(data.date, data.timeIn);
+  const clockOutAt = data.timeOut ? attendanceDateTime(data.date, data.timeOut) : "";
+  if (clockOutAt && new Date(clockOutAt) < new Date(clockInAt)) {
+    alert("Time out cannot be earlier than time in.");
     return;
   }
-  try {
-    stopAttendanceCamera();
-    window.attendanceStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = window.attendanceStream;
-  } catch (error) {
-    alert("Camera could not start. Use the Photo shot file button instead.");
-  }
-}
-
-function captureAttendancePhoto() {
-  const video = document.getElementById("attendance-camera");
-  const canvas = document.getElementById("attendance-canvas");
-  const photoInput = document.getElementById("attendance-photo");
-  const preview = document.getElementById("attendance-preview");
-  if (!video || !canvas || !photoInput || !preview || !video.videoWidth) {
-    alert("Start the camera first, then capture photo.");
-    return;
-  }
-  const context = canvas.getContext("2d");
-  context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const photo = canvas.toDataURL("image/jpeg", 0.76);
-  photoInput.value = photo;
-  preview.src = photo;
-  preview.classList.remove("hidden");
-}
-
-function loadAttendancePhotoFile(inputEl) {
-  const file = inputEl.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const photoInput = document.getElementById("attendance-photo");
-    const preview = document.getElementById("attendance-preview");
-    photoInput.value = reader.result;
-    preview.src = reader.result;
-    preview.classList.remove("hidden");
+  const existing = data.id
+    ? state.attendanceRecords.find((record) => record.id === data.id)
+    : state.attendanceRecords.find((record) => record.employeeId === data.employeeId && record.branchId === data.branchId && record.date === data.date);
+  const hourValues = attendanceHours({ clockInAt, clockOutAt: data.status === "completed" ? clockOutAt : "" });
+  const record = {
+    id: existing?.id || id("att"),
+    employeeId: employee.id,
+    employeeName: employee.name,
+    branchId: data.branchId,
+    date: data.date,
+    clockInAt,
+    clockOutAt: data.status === "completed" ? clockOutAt : "",
+    grossHours: hourValues.gross,
+    paidHours: hourValues.paid,
+    regularHours: hourValues.regular,
+    overtimeHours: hourValues.overtime,
+    notes: data.notes,
+    createdBy: existing?.createdBy || currentUser().id,
+    updatedBy: currentUser().id,
   };
-  reader.readAsDataURL(file);
-}
-
-function stopAttendanceCamera() {
-  window.attendanceStream?.getTracks?.().forEach((track) => track.stop());
-  window.attendanceStream = null;
+  if (existing) {
+    const index = state.attendanceRecords.findIndex((item) => item.id === existing.id);
+    state.attendanceRecords[index] = record;
+  } else {
+    state.attendanceRecords.push(record);
+  }
+  state.attendanceDate = data.date || today();
+  state.attendanceBranchId = data.branchId || defaultBranchId();
+  state.editingAttendanceId = null;
+  saveState();
+  render();
 }
 
 function updateTransactionAmounts(form, sourceField = null) {
@@ -2265,14 +2827,23 @@ function addTransaction(data) {
 
 function saveCashOperation(data) {
   const existing = cashOperationRecord(data.branchId, data.date);
+  if (isCashOperationClosed(existing)) {
+    alert("This cash operation is already closed.");
+    return;
+  }
+  state.cashOperationDate = data.date || today();
+  state.cashOperationBranchId = data.branchId || defaultBranchId();
   const record = {
     id: existing?.id || id("cap"),
     date: data.date,
     branchId: data.branchId,
     openingCash: Number(data.openingCash || 0),
     amount: Number(data.openingCash || 0),
+    paidIn: Number(existing?.paidIn || 0),
+    paidOut: Number(existing?.paidOut || 0),
     closeCash: data.closeCash === "" ? "" : Number(data.closeCash || 0),
     notes: data.notes,
+    status: existing?.status || "open",
     createdBy: existing?.createdBy || currentUser().id,
     updatedBy: currentUser().id,
   };
@@ -2282,6 +2853,71 @@ function saveCashOperation(data) {
   } else {
     state.dailyCapitals.push(record);
   }
+  saveState();
+  render();
+}
+
+function closeCashOperation(data) {
+  const existing = cashOperationRecord(data.branchId, data.date);
+  if (!existing) {
+    alert("Enter the starting amount first before closing the operation.");
+    return;
+  }
+  if (isCashOperationClosed(existing)) {
+    alert("This cash operation is already closed.");
+    return;
+  }
+  const closeCash = Number(data.closeCash || 0);
+  if (closeCash < 0) {
+    alert("Close cash cannot be negative.");
+    return;
+  }
+  const position = cashPosition(data.branchId, data.date);
+  const confirmed = confirm(`Close cash operation for ${data.date}?\n\nExpected cash: ${money(position.expectedCash)}\nEnding balance: ${money(closeCash)}\nVariance: ${money(closeCash - position.expectedCash)}\n\nThis will save the record for the day and lock further cash changes.`);
+  if (!confirmed) return;
+  const index = state.dailyCapitals.findIndex((capital) => capital.id === existing.id);
+  state.dailyCapitals[index] = {
+    ...existing,
+    closeCash,
+    notes: data.notes,
+    status: "closed",
+    closedAt: new Date().toISOString(),
+    closedBy: currentUser().id,
+    updatedBy: currentUser().id,
+  };
+  state.cashOperationDate = data.date || today();
+  state.cashOperationBranchId = data.branchId || defaultBranchId();
+  saveState();
+  render();
+}
+
+function addCashMovement(data) {
+  const amount = Number(data.amount || 0);
+  if (amount <= 0) {
+    alert("Enter an amount greater than zero.");
+    return;
+  }
+  const existing = cashOperationRecord(data.branchId, data.date);
+  if (!existing) {
+    alert("Enter the starting amount first before adding cash movements.");
+    return;
+  }
+  if (isCashOperationClosed(existing)) {
+    alert("This cash operation is already closed.");
+    return;
+  }
+  state.cashOperationDate = data.date || today();
+  state.cashOperationBranchId = data.branchId || defaultBranchId();
+  state.cashMovements.push({
+    id: id("cm"),
+    date: data.date,
+    branchId: data.branchId,
+    type: data.type,
+    amount,
+    notes: data.notes,
+    createdBy: currentUser().id,
+    createdAt: new Date().toISOString(),
+  });
   saveState();
   render();
 }
@@ -2360,13 +2996,19 @@ function deliveryValues(data, existing = null, appendLine = false) {
     alert(`Delivery blocked: ${materialName(shortage[0])} stock is lower than loaded weight.`);
     return null;
   }
+  const destination = parseDestinationKey(data.destinationKey);
+  if (!destination) {
+    alert("Select a delivery destination.");
+    return null;
+  }
   return {
     id: existing?.id || id("d"),
     number: existing?.number || `DLV-${String(state.deliveries.length + 1).padStart(4, "0")}`,
     date: data.date,
     sourceBranchId: data.sourceBranchId,
-    destinationBranchId: data.destinationBranchId,
-    destinationName: data.destinationName,
+    destinationBranchId: destination.branchId,
+    destinationContactId: destination.contactId,
+    destinationName: destination.name,
     truck: data.truck,
     driver: data.driver,
     status: data.status,
@@ -2375,6 +3017,19 @@ function deliveryValues(data, existing = null, appendLine = false) {
     updatedBy: currentUser().id,
     lines,
   };
+}
+
+function parseDestinationKey(destinationKey) {
+  const [type, destinationId] = String(destinationKey || "").split(":");
+  if (type === "branch") {
+    const branch = state.branches.find((item) => item.id === destinationId && item.status === "active");
+    return branch ? { branchId: branch.id, contactId: "", name: branch.name } : null;
+  }
+  if (type === "contact") {
+    const destination = (state.destinations || []).find((item) => item.id === destinationId && item.status === "active");
+    return destination ? { branchId: "", contactId: destination.id, name: destination.name } : null;
+  }
+  return null;
 }
 
 function stockForDeliveryEdit(branchId, materialId, deliveryNumber = null) {
@@ -2431,6 +3086,129 @@ function updateMaterial(data) {
     state.priceHistory.push({ id: id("ph"), materialId: existing.id, date: today(), buyPrice, sellPrice, changedBy: currentUser().id });
   }
   state.editingMaterialId = null;
+  saveState();
+  render();
+}
+
+function branchValues(data, existing = null) {
+  return {
+    id: existing?.id || id("b"),
+    code: String(data.code || "").trim().toUpperCase(),
+    name: String(data.name || "").trim(),
+    address: data.address,
+    contact: data.contact,
+    status: data.status,
+  };
+}
+
+function validateBranch(data, existingId = "") {
+  const code = String(data.code || "").trim().toUpperCase();
+  const name = String(data.name || "").trim();
+  if (!code || !name) {
+    alert("Location code and name are required.");
+    return false;
+  }
+  const duplicate = state.branches.find((branch) => branch.id !== existingId && (branch.code.toUpperCase() === code || branch.name.toLowerCase() === name.toLowerCase()));
+  if (duplicate) {
+    alert("Location code or name already exists.");
+    return false;
+  }
+  return true;
+}
+
+function addBranch(data) {
+  if (!validateBranch(data)) return;
+  state.branches.push(branchValues(data));
+  saveState();
+  render();
+}
+
+function updateBranch(data) {
+  const index = state.branches.findIndex((branch) => branch.id === data.id);
+  if (index === -1 || !validateBranch(data, data.id)) return;
+  state.branches[index] = branchValues(data, state.branches[index]);
+  state.editingBranchId = null;
+  saveState();
+  render();
+}
+
+function branchInUse(branchId) {
+  return state.users.some((user) => user.branchId === branchId)
+    || state.employees.some((employee) => employee.branchId === branchId)
+    || state.transactions.some((tx) => tx.branchId === branchId)
+    || state.stockMovements.some((movement) => movement.branchId === branchId)
+    || state.dailyCapitals.some((capital) => capital.branchId === branchId)
+    || state.deliveries.some((delivery) => delivery.sourceBranchId === branchId || delivery.destinationBranchId === branchId);
+}
+
+function deleteBranch(branchId) {
+  const branch = state.branches.find((item) => item.id === branchId);
+  if (!branch) return;
+  if (branchInUse(branchId)) {
+    alert("This location is already used in records. Set it to inactive instead of deleting it.");
+    return;
+  }
+  if (!confirm(`Delete location ${branch.name}?`)) return;
+  state.branches = state.branches.filter((item) => item.id !== branchId);
+  if (state.editingBranchId === branchId) state.editingBranchId = null;
+  saveState();
+  render();
+}
+
+function destinationValues(data, existing = null) {
+  return {
+    id: existing?.id || id("dst"),
+    type: data.type,
+    name: String(data.name || "").trim(),
+    contact: data.contact,
+    address: data.address,
+    notes: data.notes,
+    status: data.status,
+  };
+}
+
+function validateDestination(data, existingId = "") {
+  const name = String(data.name || "").trim();
+  if (!name) {
+    alert("Destination name is required.");
+    return false;
+  }
+  const duplicate = (state.destinations || []).find((destination) => destination.id !== existingId && destination.name.toLowerCase() === name.toLowerCase());
+  if (duplicate) {
+    alert("Destination name already exists.");
+    return false;
+  }
+  return true;
+}
+
+function addDestination(data) {
+  if (!validateDestination(data)) return;
+  state.destinations = state.destinations || [];
+  state.destinations.push(destinationValues(data));
+  saveState();
+  render();
+}
+
+function updateDestination(data) {
+  state.destinations = state.destinations || [];
+  const index = state.destinations.findIndex((destination) => destination.id === data.id);
+  if (index === -1 || !validateDestination(data, data.id)) return;
+  state.destinations[index] = destinationValues(data, state.destinations[index]);
+  state.editingDestinationId = null;
+  saveState();
+  render();
+}
+
+function deleteDestination(destinationId) {
+  const destination = (state.destinations || []).find((item) => item.id === destinationId);
+  if (!destination) return;
+  if (state.deliveries.some((delivery) => delivery.destinationContactId === destinationId)) {
+    alert("This destination is already used in delivery records. Set it to inactive instead of deleting it.");
+    return;
+  }
+  if (!confirm(`Delete destination ${destination.name}?`)) return;
+  state.destinations = (state.destinations || []).filter((item) => item.id !== destinationId);
+  if (state.editingDestinationId === destinationId) state.editingDestinationId = null;
   saveState();
   render();
 }
