@@ -181,6 +181,7 @@ const seedState = {
   editingEmployeeId: null,
   editingPayrollId: null,
   repeatTransactionPartyId: "",
+  selectedTransactionPartyId: "",
   repeatDeliveryId: "",
   cashOperationDate: today(),
   cashOperationBranchId: "",
@@ -212,9 +213,9 @@ const seedState = {
   ],
   priceHistory: [],
   transactions: [
-    { id: "t1", number: "TRX-0001", date: today(), branchId: "b1", type: "purchase", partyId: "p1", materialId: "m1", weight: 120, price: 8, total: 960, paymentStatus: "paid", paid: 960, balance: 0, notes: "Morning intake", createdBy: "u2" },
-    { id: "t2", number: "TRX-0002", date: today(), branchId: "b1", type: "sale", partyId: "p2", materialId: "m1", weight: 55, price: 12, total: 660, paymentStatus: "partial", paid: 400, balance: 260, notes: "Buyer pickup", createdBy: "u2" },
-    { id: "t3", number: "TRX-0003", date: today(), branchId: "b2", type: "purchase", partyId: "p1", materialId: "m2", weight: 18, price: 320, total: 5760, paymentStatus: "unpaid", paid: 0, balance: 5760, notes: "For sorting", createdBy: "u1" },
+    { id: "t1", number: "TRX-0001", date: today(), branchId: "b1", type: "purchase", partyId: "p1", materialId: "m1", weight: 120, price: 8, basePrice: 8, demandPrice: "", total: 960, paymentStatus: "paid", paid: 960, balance: 0, notes: "Morning intake", createdBy: "u2" },
+    { id: "t2", number: "TRX-0002", date: today(), branchId: "b1", type: "sale", partyId: "p2", materialId: "m1", weight: 55, price: 12, basePrice: 12, demandPrice: "", total: 660, paymentStatus: "partial", paid: 400, balance: 260, notes: "Buyer pickup", createdBy: "u2" },
+    { id: "t3", number: "TRX-0003", date: today(), branchId: "b2", type: "purchase", partyId: "p1", materialId: "m2", weight: 18, price: 320, basePrice: 320, demandPrice: "", total: 5760, paymentStatus: "unpaid", paid: 0, balance: 5760, notes: "For sorting", createdBy: "u1" },
   ],
   stockMovements: [
     { id: "s1", date: today(), branchId: "b1", materialId: "m1", type: "purchase_in", quantity: 120, reference: "TRX-0001", notes: "Auto from purchase", createdBy: "u2" },
@@ -267,6 +268,11 @@ function loadState() {
     cashMovements: parsed.cashMovements || [],
     dailyCapitals: parsed.dailyCapitals || [],
     destinations: parsed.destinations || seedState.destinations,
+    transactions: (parsed.transactions || seedState.transactions).map((transaction) => ({
+      ...transaction,
+      basePrice: transaction.basePrice ?? transaction.price ?? 0,
+      demandPrice: transaction.demandPrice ?? "",
+    })),
     employees: (parsed.employees || seedState.employees).map((employee) => ({
       sssNo: "",
       pagibigNo: "",
@@ -291,6 +297,14 @@ function money(value) {
 
 function kg(value) {
   return `${Number(value || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })} kg`;
+}
+
+function hasDemandPrice(value) {
+  return String(value ?? "").trim() !== "";
+}
+
+function transactionPrice(tx) {
+  return hasDemandPrice(tx?.demandPrice) ? Number(tx.demandPrice || 0) : Number(tx?.price ?? tx?.basePrice ?? 0);
 }
 
 function currentUser() {
@@ -333,6 +347,52 @@ function deliveryDestinationName(delivery) {
 
 function materialName(materialId) {
   return state.materials.find((material) => material.id === materialId)?.name || "Unknown material";
+}
+
+function materialPrice(materialId, field = "sellPrice") {
+  return Number(state.materials.find((material) => material.id === materialId)?.[field] || 0);
+}
+
+function deliveryLineEstimatedValue(line) {
+  return Number(line.loadedWeight || 0) * materialPrice(line.materialId, "sellPrice");
+}
+
+function deliveryLineDiscrepancy(line) {
+  return Number(line.deliveredWeight || 0) - Number(line.loadedWeight || 0);
+}
+
+function deliveryLineCalculatedLoss(line) {
+  return Math.max(-deliveryLineDiscrepancy(line), 0) * materialPrice(line.materialId, "sellPrice");
+}
+
+function deliveryIsCompleted(delivery) {
+  return delivery?.status === "completed";
+}
+
+function deliveryDiscrepancyDisplay(delivery, line) {
+  return deliveryIsCompleted(delivery) ? kg(deliveryLineDiscrepancy(line)) : "-";
+}
+
+function deliveryTotalDiscrepancyDisplay(delivery, totals) {
+  return deliveryIsCompleted(delivery) ? kg(totals.discrepancyWeight) : "-";
+}
+
+function deliveryCalculatedLossDisplay(delivery, line) {
+  return deliveryIsCompleted(delivery) ? money(deliveryLineCalculatedLoss(line)) : "-";
+}
+
+function deliveryTotalCalculatedLossDisplay(delivery, totals) {
+  return deliveryIsCompleted(delivery) ? money(totals.calculatedLoss) : "-";
+}
+
+function deliveryLoadTotals(lines) {
+  return lines.reduce((totals, line) => ({
+    loadedWeight: totals.loadedWeight + Number(line.loadedWeight || 0),
+    deliveredWeight: totals.deliveredWeight + Number(line.deliveredWeight || 0),
+    discrepancyWeight: totals.discrepancyWeight + deliveryLineDiscrepancy(line),
+    estimatedValue: totals.estimatedValue + deliveryLineEstimatedValue(line),
+    calculatedLoss: totals.calculatedLoss + deliveryLineCalculatedLoss(line),
+  }), { loadedWeight: 0, deliveredWeight: 0, discrepancyWeight: 0, estimatedValue: 0, calculatedLoss: 0 });
 }
 
 function partyName(partyId) {
@@ -1166,7 +1226,7 @@ function receiptHtml(transactions, receiptNumber = null) {
                 <tr>
                   <td>${escapeHtml(materialName(item.materialId))}</td>
                   <td>${Number(item.weight).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</td>
-                  <td>${money(item.price)}</td>
+                  <td>${money(transactionPrice(item))}${hasDemandPrice(item.demandPrice) ? " demand" : ""}</td>
                   <td>${money(item.total)}</td>
                 </tr>
               `).join("")}
@@ -1201,7 +1261,7 @@ function printCashOperation(branchId, date = today()) {
 function printDelivery(deliveryId) {
   const delivery = state.deliveries.find((item) => item.id === deliveryId);
   if (!delivery) return;
-  const receiptWindow = window.open("", "_blank", "width=460,height=760");
+  const receiptWindow = window.open("", "_blank", "width=560,height=760");
   if (!receiptWindow) {
     alert("Please allow pop-ups to print the delivery record.");
     return;
@@ -1215,8 +1275,7 @@ function deliveryReceiptHtml(delivery) {
   const branch = state.branches.find((item) => item.id === delivery.sourceBranchId);
   const operator = operatorName(delivery.createdBy || delivery.updatedBy);
   const lines = deliveryLines(delivery);
-  const loadedTotal = lines.reduce((sum, line) => sum + Number(line.loadedWeight || 0), 0);
-  const deliveredTotal = lines.reduce((sum, line) => sum + Number(line.deliveredWeight || 0), 0);
+  const totals = deliveryLoadTotals(lines);
   return `
     <!doctype html>
     <html>
@@ -1226,7 +1285,7 @@ function deliveryReceiptHtml(delivery) {
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
-          .receipt { width: 360px; margin: 18px auto; padding: 18px; background: #fff; border: 1px solid #d1d5db; }
+          .receipt { width: 500px; margin: 18px auto; padding: 18px; background: #fff; border: 1px solid #d1d5db; }
           .center { text-align: center; }
           h1 { margin: 0; font-size: 24px; }
           .tagline { margin: 3px 0 12px; font-size: 11px; color: #4b5563; }
@@ -1234,20 +1293,20 @@ function deliveryReceiptHtml(delivery) {
           .line { border-top: 1px dashed #9ca3af; margin: 12px 0; }
           .row { display: flex; justify-content: space-between; gap: 12px; margin: 7px 0; font-size: 13px; }
           .row strong:last-child, .amount { text-align: right; }
-          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
           th, td { padding: 6px 0; border-bottom: 1px solid #e5e7eb; text-align: left; }
           th:last-child, td:last-child { text-align: right; }
           .total { font-size: 16px; font-weight: 800; }
           .barcode { display: flex; justify-content: center; align-items: end; gap: 2px; height: 58px; margin-top: 12px; }
           .barcode span { display: block; height: 48px; background: #111827; }
           .code { margin-top: 6px; letter-spacing: 2px; font-size: 12px; }
-          .receipt-actions { width: 360px; margin: 18px auto 0; display: flex; gap: 8px; }
+          .receipt-actions { width: 500px; margin: 18px auto 0; display: flex; gap: 8px; }
           .receipt-actions button { flex: 1; min-height: 42px; border: 0; border-radius: 6px; font-size: 14px; font-weight: 800; cursor: pointer; }
           .print-btn { background: #16834f; color: #fff; }
           .close-btn { background: #e5e7eb; color: #111827; }
           @media print {
             body { background: #fff; }
-            .receipt { width: 76mm; margin: 0; border: 0; }
+            .receipt { width: 100%; margin: 0; border: 0; }
             .receipt-actions { display: none; }
           }
         </style>
@@ -1273,16 +1332,19 @@ function deliveryReceiptHtml(delivery) {
           <div class="row"><span>Status</span><strong>${escapeHtml(delivery.status)}</strong></div>
           <div class="line"></div>
           <table>
-            <thead><tr><th>Material</th><th>Loaded</th><th>Delivered</th></tr></thead>
+            <thead><tr><th>Material</th><th>Loaded</th><th>Delivered</th><th>Gap</th><th>Loss</th><th>Value</th></tr></thead>
             <tbody>
               ${lines.map((line) => `
-                <tr><td>${escapeHtml(materialName(line.materialId))}</td><td>${kg(line.loadedWeight)}</td><td>${kg(line.deliveredWeight)}</td></tr>
+                <tr><td>${escapeHtml(materialName(line.materialId))}</td><td>${kg(line.loadedWeight)}</td><td>${kg(line.deliveredWeight)}</td><td>${deliveryDiscrepancyDisplay(delivery, line)}</td><td>${deliveryCalculatedLossDisplay(delivery, line)}</td><td>${money(deliveryLineEstimatedValue(line))}</td></tr>
               `).join("")}
             </tbody>
           </table>
           <div class="line"></div>
-          <div class="row total"><span>Total loaded</span><strong>${kg(loadedTotal)}</strong></div>
-          <div class="row"><span>Total delivered</span><strong>${kg(deliveredTotal)}</strong></div>
+          <div class="row total"><span>Total loaded</span><strong>${kg(totals.loadedWeight)}</strong></div>
+          <div class="row"><span>Total delivered</span><strong>${kg(totals.deliveredWeight)}</strong></div>
+          <div class="row"><span>Discrepancy</span><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></div>
+          <div class="row"><span>Calculated loss</span><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></div>
+          <div class="row"><span>Estimated value</span><strong>${money(totals.estimatedValue)}</strong></div>
           ${delivery.notes ? `<div class="line"></div><div class="muted">Notes: ${escapeHtml(delivery.notes)}</div>` : ""}
           <div class="line"></div>
           ${barcode(delivery.number)}
@@ -1513,9 +1575,11 @@ function barcode(value) {
 function transactionsView() {
   const transactions = branchFilter(state.transactions);
   const editingTransaction = transactions.find((tx) => tx.id === state.editingTransactionId) || null;
+  const selectedPartyId = editingTransaction?.partyId || state.selectedTransactionPartyId || state.repeatTransactionPartyId || state.parties.find((party) => party.status === "active")?.id || "";
   return page("Transactions", "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.", `
     <section class="grid">
       ${transactionForm(editingTransaction)}
+      ${selectedPartyTransactionHistory(selectedPartyId)}
       <div class="panel">
         <div class="panel-head"><h3>Recent transactions</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
         ${customerTransactionGroups(transactions)}
@@ -1526,14 +1590,15 @@ function transactionsView() {
 
 function transactionForm(tx = null) {
   const action = tx ? "update-transaction" : "add-transaction";
-  const selectedPartyId = tx?.partyId || state.repeatTransactionPartyId || "";
+  const selectedPartyId = tx?.partyId || state.selectedTransactionPartyId || state.repeatTransactionPartyId || "";
+  const originalDate = tx?.date || "";
   return `
     <form class="panel" data-action="${action}" data-transaction-form>
       <div class="panel-head">
         <h3>${tx ? `Edit ${tx.number}` : "New transaction"}</h3>
         ${tx ? `<button class="btn secondary" type="button" data-action="cancel-transaction-edit">Cancel edit</button>` : ""}
       </div>
-      ${tx ? `<input type="hidden" name="id" value="${tx.id}">` : ""}
+      ${tx ? `<input type="hidden" name="id" value="${tx.id}"><input type="hidden" name="originalDate" value="${originalDate}">` : ""}
       <div class="form-grid">
         ${dateInput("date", tx?.date || today())}
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
@@ -1541,15 +1606,34 @@ function transactionForm(tx = null) {
         ${partySelect("partyId", selectedPartyId)}
         ${materialSelect("materialId", tx?.materialId)}
         ${input("weight", "Weight in kilos", "number", tx?.weight ?? "0", "0.01")}
-        ${input("price", "Price per kilo", "number", tx?.price ?? "", "0.01")}
+        ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
+        ${numberInput("demandPrice", "Price per demand", tx?.demandPrice ?? "", "0.01", false)}
         ${select("paymentStatus", [["paid", "Paid"], ["unpaid", "Unpaid"], ["partial", "Partial"]], tx?.paymentStatus)}
         ${input("paid", "Amount paid", "number", tx?.paid ?? "0", "0.01")}
       </div>
       <div class="notice" data-transaction-summary style="margin-top:12px">Total: PHP 0.00 | Balance: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${tx?.notes || ""}</textarea></label>
       ${tx ? "" : `<label class="check-row"><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer</label>`}
-      <button class="btn" type="submit" style="margin-top:12px">${tx ? "Save changes" : "Save transaction"}</button>
+      <button class="btn" type="submit" style="margin-top:12px" data-transaction-submit>${tx ? "Save changes" : "Save transaction"}</button>
     </form>
+  `;
+}
+
+function selectedPartyTransactionHistory(partyId) {
+  const rows = state.transactions
+    .filter((tx) => tx.partyId === partyId)
+    .slice()
+    .sort((a, b) => `${b.date} ${b.number}`.localeCompare(`${a.date} ${a.number}`));
+  return `
+    <div class="panel">
+      <div class="panel-head">
+        <h3 class="danger-text">${escapeHtml(partyName(partyId))} transactions</h3>
+        <span class="mini-label danger-text">All records, no branch filter</span>
+      </div>
+      ${table(["Action", "No.", "Date", "Branch", "Type", "Material", "Weight", "Price", "Total", "Paid", "Balance"], rows.map((tx) => `
+        <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(transactionPrice(tx))}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+      `))}
+    </div>
   `;
 }
 
@@ -1567,8 +1651,8 @@ function customerTransactionGroups(transactions) {
           <div><h3>${escapeHtml(partyName(partyId))}</h3><small>${rows.length} transaction${rows.length === 1 ? "" : "s"} - ${money(total)}</small></div>
           <button class="btn secondary" data-print-customer-receipt="${partyId}">Print customer receipt</button>
         </div>
-        ${table(["Action", "No.", "Date", "Type", "Material", "Weight", "Total", "Paid", "Balance"], rows.map((tx) => `
-          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+        ${table(["Action", "No.", "Date", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
+          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
         `))}
       </section>
     `;
@@ -1647,8 +1731,7 @@ function deliveriesView() {
 function deliveryRecordGroups(deliveries) {
   const groups = deliveries.slice().reverse().map((delivery) => {
     const lines = deliveryLines(delivery);
-    const loadedTotal = lines.reduce((sum, line) => sum + Number(line.loadedWeight || 0), 0);
-    const deliveredTotal = lines.reduce((sum, line) => sum + Number(line.deliveredWeight || 0), 0);
+    const totals = deliveryLoadTotals(lines);
     return `
       <section class="customer-group ${state.editingDeliveryId === delivery.id ? "row-editing" : ""}">
         <div class="customer-head">
@@ -1661,9 +1744,9 @@ function deliveryRecordGroups(deliveries) {
             <button class="btn secondary" data-print-delivery="${delivery.id}">Print</button>
           </div>
         </div>
-        ${table(["Material", "Loaded", "Delivered", "Status"], [
-          ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td>${badge(delivery.status)}</td></tr>`),
-          `<tr><td><strong>Total</strong></td><td class="num"><strong>${kg(loadedTotal)}</strong></td><td class="num"><strong>${kg(deliveredTotal)}</strong></td><td></td></tr>`,
+        ${table(["Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Status"], [
+          ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td class="num">${deliveryDiscrepancyDisplay(delivery, line)}</td><td class="amount">${deliveryCalculatedLossDisplay(delivery, line)}</td><td class="amount">${money(deliveryLineEstimatedValue(line))}</td><td>${badge(delivery.status)}</td></tr>`),
+          `<tr><td><strong>Truck load total</strong></td><td class="num"><strong>${kg(totals.loadedWeight)}</strong></td><td class="num"><strong>${kg(totals.deliveredWeight)}</strong></td><td class="num"><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${money(totals.estimatedValue)}</strong></td><td></td></tr>`,
         ])}
       </section>
     `;
@@ -1677,7 +1760,7 @@ function deliveryForm(delivery = null) {
   const source = delivery || repeatDelivery;
   const destinationKey = source?.destinationContactId ? `contact:${source.destinationContactId}` : source?.destinationBranchId ? `branch:${source.destinationBranchId}` : "";
   return `
-    <form class="panel" data-action="${action}">
+    <form class="panel" data-action="${action}" data-delivery-form>
       <div class="panel-head">
         <h3>${delivery ? `Edit ${delivery.number}` : repeatDelivery ? `Add scrap to ${repeatDelivery.number}` : "New delivery"}</h3>
         ${delivery ? `<button class="btn secondary" type="button" data-action="cancel-delivery-edit">Cancel edit</button>` : ""}
@@ -1694,6 +1777,7 @@ function deliveryForm(delivery = null) {
       </div>
       <div class="panel-head" style="margin-top:14px"><h3>${delivery ? "Truck load scraps" : "Single scrap material"}</h3></div>
       ${deliveryLineInputs(delivery)}
+      <div class="notice" data-delivery-summary style="margin-top:12px">Truck load total: 0 kg | Delivered: 0 kg | Estimated value: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${source?.notes || ""}</textarea></label>
       ${delivery ? "" : `<label class="check-row"><input type="checkbox" name="keepSameTruck" value="yes" ${repeatDelivery ? "checked" : ""}> Process another scrap material with the same truck</label>`}
       <button class="btn" type="submit" style="margin-top:12px">${delivery ? "Save changes" : repeatDelivery ? "Add scrap load" : "Save delivery"}</button>
@@ -1721,19 +1805,31 @@ function deliveryFormLines(data) {
 }
 
 function deliveryRecordRows() {
-  return state.deliveries.flatMap((delivery) => deliveryLines(delivery).map((line) => ({
-    deliveryNumber: delivery.number,
-    date: delivery.date,
-    destination: deliveryDestinationName(delivery),
-    truck: delivery.truck,
-    driver: delivery.driver,
-    operator: operatorName(delivery.createdBy || delivery.updatedBy),
-    material: materialName(line.materialId),
-    loadedWeightKg: line.loadedWeight,
-    deliveredWeightKg: line.deliveredWeight,
-    status: delivery.status,
-    notes: delivery.notes || "",
-  })));
+  return state.deliveries.flatMap((delivery) => {
+    const lines = deliveryLines(delivery);
+    const totals = deliveryLoadTotals(lines);
+    return lines.map((line) => ({
+      deliveryNumber: delivery.number,
+      date: delivery.date,
+      destination: deliveryDestinationName(delivery),
+      truck: delivery.truck,
+      driver: delivery.driver,
+      operator: operatorName(delivery.createdBy || delivery.updatedBy),
+      material: materialName(line.materialId),
+      loadedWeightKg: line.loadedWeight,
+      deliveredWeightKg: line.deliveredWeight,
+      discrepancyKg: deliveryIsCompleted(delivery) ? deliveryLineDiscrepancy(line) : "",
+      calculatedLoss: deliveryIsCompleted(delivery) ? deliveryLineCalculatedLoss(line) : "",
+      estimatedValue: deliveryLineEstimatedValue(line),
+      totalTruckLoadedKg: totals.loadedWeight,
+      totalTruckDeliveredKg: totals.deliveredWeight,
+      totalTruckDiscrepancyKg: deliveryIsCompleted(delivery) ? totals.discrepancyWeight : "",
+      totalTruckCalculatedLoss: deliveryIsCompleted(delivery) ? totals.calculatedLoss : "",
+      totalTruckEstimatedValue: totals.estimatedValue,
+      status: delivery.status,
+      notes: delivery.notes || "",
+    }));
+  });
 }
 
 function deliveryLineInputs(delivery = null) {
@@ -1742,8 +1838,12 @@ function deliveryLineInputs(delivery = null) {
   return lineNumbers.map((lineNo) => `
     <div class="form-grid" style="margin-bottom:10px">
       ${materialSelect(`materialId${lineNo}`, lines[lineNo - 1]?.materialId || "", lineNo === 1)}
-      ${numberInput(`loadedWeight${lineNo}`, `Loaded weight ${lineNo}`, lines[lineNo - 1]?.loadedWeight ?? (lineNo === 1 ? "0" : ""), "0.01", lineNo === 1)}
-      ${numberInput(`deliveredWeight${lineNo}`, `Delivered weight ${lineNo}`, lines[lineNo - 1]?.deliveredWeight ?? "", "0.01", false)}
+      <label><span class="label-line">Loaded weight ${lineNo} <span data-stock-hint="${lineNo}">- Available stock: --</span></span>
+        <input name="loadedWeight${lineNo}" type="number" value="${lines[lineNo - 1]?.loadedWeight ?? (lineNo === 1 ? "0" : "")}" step="0.01" min="0" ${lineNo === 1 ? "required" : ""} data-loaded-weight-line="${lineNo}">
+      </label>
+      <label>Delivered weight ${lineNo}
+        <input name="deliveredWeight${lineNo}" type="number" value="${lines[lineNo - 1]?.deliveredWeight ?? ""}" step="0.01" min="0" data-delivered-weight-line="${lineNo}">
+      </label>
     </div>
   `).join("");
 }
@@ -2113,8 +2213,8 @@ function reportsView() {
 }
 
 function transactionReportTable(rows) {
-  return table(["Date", "Name", "Material", "Weight", "Price", "Total", "Payment"], rows.map((tx) => `
-    <tr><td>${tx.date}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.price)}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
+  return table(["Date", "Name", "Material", "Weight", "Price", "Demand Price", "Total", "Payment"], rows.map((tx) => `
+    <tr><td>${tx.date}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
   `));
 }
 
@@ -2344,6 +2444,8 @@ function bindEvents() {
   document.querySelectorAll("form[data-action]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (form.matches("[data-delivery-form]") && !updateDeliveryStockLimits(form, true)) return;
+      if (form.reportValidity && !form.reportValidity()) return;
       handleForm(form.dataset.action, Object.fromEntries(new FormData(form)));
     });
   });
@@ -2603,10 +2705,26 @@ function bindEvents() {
   });
 
   document.querySelectorAll("[data-transaction-form]").forEach((form) => {
-    const update = (event) => updateTransactionAmounts(form, event?.target);
+    const update = (event) => {
+      updateTransactionAmounts(form, event?.target);
+      updateTransactionSubmitLabel(form);
+    };
     form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
     form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
+    form.elements.namedItem("partyId")?.addEventListener("change", () => {
+      state.selectedTransactionPartyId = form.elements.namedItem("partyId")?.value || "";
+      saveState();
+      render();
+    });
     updateTransactionAmounts(form);
+    updateTransactionSubmitLabel(form);
+  });
+
+  document.querySelectorAll("[data-delivery-form]").forEach((form) => {
+    const update = (event) => updateDeliveryStockLimits(form, event?.target?.matches("[data-loaded-weight-line]"));
+    form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
+    form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
+    updateDeliveryStockLimits(form);
   });
 
   document.querySelectorAll("[data-payroll-form]").forEach((form) => {
@@ -2743,7 +2861,7 @@ function updateTransactionAmounts(form, sourceField = null) {
     form.price.value = form.type.value === "sale" ? material.sellPrice : material.buyPrice;
   }
   const weight = Number(form.weight?.value || 0);
-  const price = Number(form.price?.value || 0);
+  const price = hasDemandPrice(form.demandPrice?.value) ? Number(form.demandPrice.value || 0) : Number(form.price?.value || 0);
   const total = weight * price;
   if (form.paymentStatus.value === "paid") {
     form.paid.value = total.toFixed(2);
@@ -2761,6 +2879,76 @@ function updateTransactionAmounts(form, sourceField = null) {
   if (summary) summary.textContent = `Total: ${money(total)} | Balance: ${money(balance)}`;
 }
 
+function transactionDateChanged(form) {
+  const originalDate = form.elements.namedItem("originalDate")?.value || "";
+  const currentDate = form.elements.namedItem("date")?.value || "";
+  return Boolean(originalDate && currentDate && originalDate !== currentDate);
+}
+
+function updateTransactionSubmitLabel(form) {
+  const button = form.querySelector("[data-transaction-submit]");
+  if (!button) return;
+  if (form.dataset.action === "update-transaction") {
+    button.textContent = transactionDateChanged(form) ? "Save as" : "Save changes";
+  }
+}
+
+function deliveryExistingNumberForForm(form) {
+  const existingId = form.elements.namedItem("id")?.value || form.elements.namedItem("appendDeliveryId")?.value || "";
+  return state.deliveries.find((delivery) => delivery.id === existingId)?.number || null;
+}
+
+function updateDeliveryStockLimits(form, showAlert = false) {
+  const sourceBranchId = form.elements.namedItem("sourceBranchId")?.value || defaultBranchId();
+  const existingNumber = deliveryExistingNumberForForm(form);
+  const loadedFields = Array.from(form.querySelectorAll("[data-loaded-weight-line]"));
+  const formLines = loadedFields.map((field) => {
+    const lineNo = field.dataset.loadedWeightLine;
+    return {
+      lineNo,
+      materialId: form.elements.namedItem(`materialId${lineNo}`)?.value,
+      loadedWeight: Number(field.value || 0),
+      deliveredWeight: Number(form.elements.namedItem(`deliveredWeight${lineNo}`)?.value || 0),
+    };
+  });
+  const totalsByMaterial = loadedFields.reduce((totals, field) => {
+    const lineNo = field.dataset.loadedWeightLine;
+    const materialId = form.elements.namedItem(`materialId${lineNo}`)?.value;
+    if (materialId) totals[materialId] = (totals[materialId] || 0) + Number(field.value || 0);
+    return totals;
+  }, {});
+  const truckTotals = deliveryLoadTotals(formLines.filter((line) => line.materialId));
+  let firstShortage = null;
+  loadedFields.forEach((field) => {
+    const lineNo = field.dataset.loadedWeightLine;
+    const line = formLines.find((item) => item.lineNo === lineNo) || {};
+    const materialId = line.materialId;
+    const hint = form.querySelector(`[data-stock-hint="${lineNo}"]`);
+    field.setCustomValidity("");
+    if (!materialId) {
+      if (hint) hint.textContent = "- Available stock: --";
+      return;
+    }
+    const availableStock = stockForDeliveryEdit(sourceBranchId, materialId, existingNumber);
+    field.max = String(Math.max(availableStock, 0));
+    if (hint) hint.textContent = `- Available stock: ${kg(availableStock)}`;
+    const loadedTotal = Number(totalsByMaterial[materialId] || 0);
+    if (loadedTotal > availableStock) {
+      const message = `${materialName(materialId)} loaded weight exceeds inventory. Available stock: ${kg(availableStock)}. Loaded weight: ${kg(loadedTotal)}.`;
+      field.setCustomValidity(message);
+      firstShortage = firstShortage || { materialId, availableStock, loadedWeight: loadedTotal };
+    }
+  });
+  const summary = form.querySelector("[data-delivery-summary]");
+  if (summary) {
+    summary.textContent = `Truck load total: ${kg(truckTotals.loadedWeight)} | Delivered: ${kg(truckTotals.deliveredWeight)} | Estimated value: ${money(truckTotals.estimatedValue)}`;
+  }
+  if (firstShortage && showAlert) {
+    alert(`Delivery blocked: ${materialName(firstShortage.materialId)} loaded weight exceeds inventory.\n\nAvailable stock: ${kg(firstShortage.availableStock)}\nLoaded weight: ${kg(firstShortage.loadedWeight)}`);
+  }
+  return !firstShortage;
+}
+
 function updatePayrollSummary(form) {
   const data = Object.fromEntries(new FormData(form));
   const totals = payrollTotals(payrollFormData(data, state.payrollRuns.find((run) => run.id === data.id)));
@@ -2771,7 +2959,9 @@ function updatePayrollSummary(form) {
 function transactionValues(data, existingNumber = null) {
   const material = state.materials.find((item) => item.id === data.materialId);
   const weight = Number(data.weight);
-  const price = Number(data.price || (data.type === "sale" ? material.sellPrice : material.buyPrice));
+  const basePrice = Number(data.price || (data.type === "sale" ? material.sellPrice : material.buyPrice));
+  const demandPrice = hasDemandPrice(data.demandPrice) ? Number(data.demandPrice || 0) : "";
+  const price = demandPrice === "" ? basePrice : demandPrice;
   const total = weight * price;
   const paid = data.paymentStatus === "paid" ? total : data.paymentStatus === "unpaid" ? 0 : Math.min(Number(data.paid || 0), total);
   return {
@@ -2783,6 +2973,8 @@ function transactionValues(data, existingNumber = null) {
     materialId: data.materialId,
     weight,
     price,
+    basePrice,
+    demandPrice,
     total,
     paymentStatus: data.paymentStatus,
     paid,
@@ -2821,6 +3013,7 @@ function addTransaction(data) {
   state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id });
   state.stockMovements.push(autoStockMovement(tx));
   state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
+  state.selectedTransactionPartyId = data.partyId;
   saveState();
   render();
 }
@@ -2926,6 +3119,20 @@ function updateTransaction(data) {
   const index = state.transactions.findIndex((tx) => tx.id === data.id);
   if (index === -1) return;
   const existing = state.transactions[index];
+  if (data.originalDate && data.date !== data.originalDate) {
+    const tx = transactionValues(data);
+    if (tx.type === "sale" && stockFor(tx.branchId, tx.materialId) < tx.weight && !isAdmin()) {
+      alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
+      return;
+    }
+    state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id, sourceTransactionId: existing.id });
+    state.stockMovements.push(autoStockMovement(tx));
+    state.editingTransactionId = null;
+    state.selectedTransactionPartyId = data.partyId;
+    saveState();
+    render();
+    return;
+  }
   const tx = transactionValues(data, existing.number);
   if (tx.type === "sale" && stockForEdit(tx.branchId, tx.materialId, existing.number) < tx.weight && !isAdmin()) {
     alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
@@ -2935,6 +3142,7 @@ function updateTransaction(data) {
   state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== existing.number);
   state.stockMovements.push(autoStockMovement(tx));
   state.editingTransactionId = null;
+  state.selectedTransactionPartyId = data.partyId;
   saveState();
   render();
 }
@@ -2992,8 +3200,10 @@ function deliveryValues(data, existing = null, appendLine = false) {
     return totals;
   }, {});
   const shortage = Object.entries(totalsByMaterial).find(([materialId, loadedWeight]) => stockForDeliveryEdit(data.sourceBranchId, materialId, existing?.number) < loadedWeight);
-  if (shortage && !isAdmin()) {
-    alert(`Delivery blocked: ${materialName(shortage[0])} stock is lower than loaded weight.`);
+  if (shortage) {
+    const [materialId, loadedWeight] = shortage;
+    const availableStock = stockForDeliveryEdit(data.sourceBranchId, materialId, existing?.number);
+    alert(`Delivery blocked: ${materialName(materialId)} loaded weight exceeds inventory.\n\nAvailable stock: ${kg(availableStock)}\nLoaded weight: ${kg(loadedWeight)}`);
     return null;
   }
   const destination = parseDestinationKey(data.destinationKey);
@@ -3373,7 +3583,7 @@ function exportExcel(type) {
 function excelWorkbook(sheetName, rows) {
   const defaultHeaders = {
     inventory: ["material", "category", "unit", "currentStockKg", "buyingPricePerKilo", "sellingPricePerKilo", "estimatedValue", "location"],
-    deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "status", "notes"],
+    deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "discrepancyKg", "calculatedLoss", "estimatedValue", "totalTruckLoadedKg", "totalTruckDeliveredKg", "totalTruckDiscrepancyKg", "totalTruckCalculatedLoss", "totalTruckEstimatedValue", "status", "notes"],
   };
   const headers = rows.length ? Object.keys(rows[0]) : defaultHeaders[sheetName] || [];
   const headerCells = headers.map((header) => `<th>${escapeHtml(labelFromName(header))}</th>`).join("");
