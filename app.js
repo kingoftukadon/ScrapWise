@@ -1613,7 +1613,7 @@ function transactionForm(tx = null) {
       </div>
       <div class="notice" data-transaction-summary style="margin-top:12px">Total: PHP 0.00 | Balance: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${tx?.notes || ""}</textarea></label>
-      ${tx ? "" : `<label class="check-row"><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer</label>`}
+      <label class="check-row ${tx ? "hidden" : ""}" data-save-as-repeat-row><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer</label>
       <button class="btn" type="submit" style="margin-top:12px" data-transaction-submit>${tx ? "Save changes" : "Save transaction"}</button>
     </form>
   `;
@@ -2887,9 +2887,12 @@ function transactionDateChanged(form) {
 
 function updateTransactionSubmitLabel(form) {
   const button = form.querySelector("[data-transaction-submit]");
+  const repeatRow = form.querySelector("[data-save-as-repeat-row]");
   if (!button) return;
   if (form.dataset.action === "update-transaction") {
-    button.textContent = transactionDateChanged(form) ? "Save as" : "Save changes";
+    const saveAs = transactionDateChanged(form);
+    button.textContent = saveAs ? "Save as" : "Save changes";
+    repeatRow?.classList.toggle("hidden", !saveAs);
   }
 }
 
@@ -3128,6 +3131,7 @@ function updateTransaction(data) {
     state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id, sourceTransactionId: existing.id });
     state.stockMovements.push(autoStockMovement(tx));
     state.editingTransactionId = null;
+    state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
     state.selectedTransactionPartyId = data.partyId;
     saveState();
     render();
