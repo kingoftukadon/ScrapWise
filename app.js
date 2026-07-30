@@ -1638,7 +1638,7 @@ function transactionForm(tx = null) {
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
         ${partySelect("partyId", selectedPartyId)}
         ${materialSelect("materialId", tx?.materialId)}
-        ${input("weight", "Weight in kilos", "number", tx?.weight ?? "0", "0.01")}
+        <label>${t("Weight in kilos")}<input name="weight" type="number" value="${tx?.weight ?? ""}" step="0.01" min="0.01" required></label>
         ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
         ${numberInput("demandPrice", "Price per demand", tx?.demandPrice ?? "", "0.01", false)}
         ${select("paymentStatus", [["paid", "Paid"], ["unpaid", "Unpaid"], ["partial", "Partial"]], tx?.paymentStatus)}
@@ -3114,6 +3114,15 @@ function transactionValues(data, existingNumber = null) {
   };
 }
 
+function validTransactionWeight(data) {
+  const weight = Number(data.weight || 0);
+  if (!Number.isFinite(weight) || weight <= 0) {
+    alert("Transaction blocked: weight must be greater than 0 kg.");
+    return false;
+  }
+  return true;
+}
+
 function autoStockMovement(tx) {
   return {
     id: id("s"),
@@ -3136,6 +3145,7 @@ function stockForEdit(branchId, materialId, transactionNumber = null) {
 }
 
 function addTransaction(data) {
+  if (!validTransactionWeight(data)) return;
   const tx = transactionValues(data);
   if (tx.type === "sale" && stockFor(tx.branchId, tx.materialId) < tx.weight && !isAdmin()) {
     alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
@@ -3250,6 +3260,7 @@ function updateTransaction(data) {
   const index = state.transactions.findIndex((tx) => tx.id === data.id);
   if (index === -1) return;
   const existing = state.transactions[index];
+  if (!validTransactionWeight(data)) return;
   if (data.originalDate && data.date !== data.originalDate) {
     const tx = transactionValues(data);
     if (tx.type === "sale" && stockFor(tx.branchId, tx.materialId) < tx.weight && !isAdmin()) {
