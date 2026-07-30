@@ -549,15 +549,11 @@ function page(title, subtitle, body) {
 function dashboardView() {
   const transactions = branchFilter(state.transactions);
   const monthRange = currentMonthRange();
-  const weekDates = lastNDates(7);
   const monthlyTransactions = transactions.filter((tx) => tx.date >= monthRange.start && tx.date <= monthRange.end);
-  const weeklyTransactions = transactions.filter((tx) => weekDates.includes(tx.date));
   const inventoryValue = stockPositionRows().reduce((sum, row) => sum + row.estimatedValue, 0);
   const monthlyPurchases = totalByType(monthlyTransactions, "purchase");
   const monthlySales = totalByType(monthlyTransactions, "sale");
   const pending = transactions.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
-  const activeDeliveries = state.deliveries.filter((delivery) => ["pending", "in_transit"].includes(delivery.status)).length;
-  const completedDeliveries = state.deliveries.filter((delivery) => delivery.status === "completed").length;
   const dashboardCash = cashPosition(currentCapitalBranchId());
   const monthlyProfit = profitFor(monthlyTransactions);
 
@@ -586,34 +582,10 @@ function dashboardView() {
       </div>
     </section>
 
-    <section class="dash-kpi-band">
-      <div class="dash-band-head">
-        <h3>Monthly KPI</h3>
-        <span>${monthRange.start} to ${monthRange.end}</span>
-      </div>
-      <div class="dash-kpi-grid">
-        ${dashboardKpi("Bought kilos", kg(weightByType(monthlyTransactions, "purchase")), `${monthlyTransactions.filter((tx) => tx.type === "purchase").length} purchase lines`, "green")}
-        ${dashboardKpi("Sold kilos", kg(weightByType(monthlyTransactions, "sale")), `${monthlyTransactions.filter((tx) => tx.type === "sale").length} sale lines`, "blue")}
-        ${dashboardKpi("Transactions", monthlyTransactions.length, "Purchase and sale activity", "purple")}
-        ${dashboardKpi("Deliveries", `${activeDeliveries} active`, `${completedDeliveries} completed`, "teal")}
-      </div>
-    </section>
-
     <section class="dash-chart-row">
-      <div class="dash-panel chart-panel">
-        <div class="panel-head"><h3>Weekly purchases vs sales</h3><span class="mini-label">Last 7 days</span></div>
-        ${weeklyPurchaseSalesChart(weekDates, transactions)}
-      </div>
       <div class="dash-panel funnel-panel">
         <div class="panel-head"><h3>Material movement funnel</h3><span class="mini-label">This month</span></div>
         ${materialFunnel(materialMovement(monthlyTransactions))}
-      </div>
-    </section>
-
-    <section class="dash-chart-row lower">
-      <div class="dash-panel chart-panel wide">
-        <div class="panel-head"><h3>Weekly transaction count</h3><span class="mini-label">Purchase and sale activity</span></div>
-        ${weeklyCountChart(weekDates, transactions)}
       </div>
       <div class="dash-panel">
         <div class="panel-head"><h3>Stock value by material</h3><span class="mini-label">Current</span></div>
