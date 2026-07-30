@@ -1664,7 +1664,7 @@ function selectedPartyTransactionHistory(partyId) {
         <span class="mini-label danger-text">All records, no branch filter</span>
       </div>
       ${table(["Action", "No.", "Date", "Branch", "Type", "Material", "Weight", "Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-        <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(transactionPrice(tx))}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+        <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(transactionPrice(tx))}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
       `))}
     </div>
   `;
@@ -1685,7 +1685,7 @@ function customerTransactionGroups(transactions) {
           <button class="btn secondary" data-print-customer-receipt="${partyId}">Print customer receipt</button>
         </div>
         ${table(["Action", "No.", "Date", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
         `))}
       </section>
     `;
@@ -2606,6 +2606,10 @@ function bindEvents() {
     button.addEventListener("click", () => printCustomerReceipt(button.dataset.printCustomerReceipt));
   });
 
+  document.querySelectorAll("[data-delete-transaction]").forEach((button) => {
+    button.addEventListener("click", () => deleteTransaction(button.dataset.deleteTransaction));
+  });
+
   document.querySelectorAll("[data-action='cancel-transaction-edit']").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingTransactionId = null;
@@ -3286,6 +3290,23 @@ function updateTransaction(data) {
   state.stockMovements.push(autoStockMovement(tx));
   state.editingTransactionId = null;
   state.selectedTransactionPartyId = data.partyId;
+  saveState();
+  render();
+}
+
+function deleteTransaction(transactionId) {
+  const tx = state.transactions.find((item) => item.id === transactionId);
+  if (!tx) return;
+  if (!confirm(`Delete transaction ${tx.number}? This will also remove its inventory movement.`)) return;
+  state.transactions = state.transactions.filter((item) => item.id !== transactionId);
+  state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== tx.number);
+  if (state.editingTransactionId === transactionId) state.editingTransactionId = null;
+  if (state.selectedTransactionPartyId === tx.partyId && !state.transactions.some((item) => item.partyId === tx.partyId)) {
+    state.selectedTransactionPartyId = "";
+  }
+  if (state.repeatTransactionPartyId === tx.partyId && !state.transactions.some((item) => item.partyId === tx.partyId)) {
+    state.repeatTransactionPartyId = "";
+  }
   saveState();
   render();
 }
