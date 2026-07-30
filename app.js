@@ -1083,7 +1083,7 @@ function reviewAttendanceView() {
         </div>
       </div>
       <div class="panel">
-      <div class="panel-head"><h3 class="danger-text">Employees on duty</h3><span class="mini-label">${branchLabel} | ${filters.from} to ${filters.to}</span></div>
+      <div class="panel-head"><div><h3 class="danger-text">Employees on duty</h3><span class="mini-label">${branchLabel} | ${filters.from} to ${filters.to}</span></div><button class="btn secondary" data-export-excel="review-attendance">Download Excel</button></div>
       ${attendanceTable(records)}
       </div>
     </section>
@@ -1113,6 +1113,23 @@ function reviewAttendanceRecords(filters) {
     .filter((record) => filters.branchId === "all" || record.branchId === filters.branchId)
     .filter((record) => (!filters.from || record.date >= filters.from) && (!filters.to || record.date <= filters.to))
     .sort((a, b) => `${b.date}${b.clockInAt}`.localeCompare(`${a.date}${a.clockInAt}`));
+}
+
+function reviewAttendanceRows() {
+  return reviewAttendanceRecords(reviewAttendanceFilterValues()).map((record) => {
+    const hours = attendanceHours(record);
+    return {
+      date: record.date,
+      employee: record.employeeName || employeeName(record.employeeId) || record.userName,
+      branch: branchName(record.branchId),
+      timeIn: timeOnlyLabel(record.clockInAt),
+      timeOut: record.clockOutAt ? timeOnlyLabel(record.clockOutAt) : "",
+      regularHours: hours.regular.toFixed(2),
+      overtimeHours: hours.overtime.toFixed(2),
+      status: record.clockOutAt ? "completed" : "on duty",
+      notes: record.notes || "",
+    };
+  });
 }
 
 function attendanceTable(records) {
@@ -3713,6 +3730,7 @@ function exportExcel(type) {
   const datasets = {
     inventory: inventoryRows(),
     deliveries: deliveryRecordRows(),
+    "review-attendance": reviewAttendanceRows(),
   };
   const rows = datasets[type] || [];
   const workbook = excelWorkbook(type, rows);
@@ -3729,6 +3747,7 @@ function excelWorkbook(sheetName, rows) {
   const defaultHeaders = {
     inventory: ["material", "category", "unit", "currentStockKg", "buyingPricePerKilo", "sellingPricePerKilo", "estimatedValue", "location"],
     deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "discrepancyKg", "calculatedLoss", "estimatedValue", "totalTruckLoadedKg", "totalTruckDeliveredKg", "totalTruckDiscrepancyKg", "totalTruckCalculatedLoss", "totalTruckEstimatedValue", "status", "notes"],
+    "review-attendance": ["date", "employee", "branch", "timeIn", "timeOut", "regularHours", "overtimeHours", "status", "notes"],
   };
   const headers = rows.length ? Object.keys(rows[0]) : defaultHeaders[sheetName] || [];
   const headerCells = headers.map((header) => `<th>${escapeHtml(labelFromName(header))}</th>`).join("");
