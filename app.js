@@ -187,6 +187,7 @@ const seedState = {
   cashOperationBranchId: "",
   attendanceDate: today(),
   attendanceBranchId: "",
+  reviewAttendanceFilters: { branchId: "all", from: monthStart(), to: today() },
   attendanceRecords: [],
   cashMovements: [],
   dailyCapitals: [
@@ -237,7 +238,7 @@ const seedState = {
     { id: "e2", name: "Ana Cruz", branchId: "b2", position: "Cashier", salaryType: "monthly", rate: 18000, sssNo: "34-7654321-0", pagibigNo: "9876-5432-1011", benefits: "SSS, PhilHealth, Pag-IBIG", startDate: "2021-08-01", status: "active" },
   ],
   cashAdvances: [
-    { id: "ca1", employeeId: "e1", date: today(), amount: 1000, reason: "Emergency", balance: 600, status: "active" },
+    { id: "ca1", employeeId: "e1", date: today(), amount: 1000, reason: "Emergency", totalDeduction: 400, balance: 600, status: "active" },
   ],
   payrollRuns: [
     { id: "pr1", period: "2026-07-01 to 2026-07-15", employeeId: "e1", basicPay: 6600, benefits: 300, deductions: 200, cashAdvanceDeduction: 400, netPay: 6300, status: "approved" },
@@ -248,6 +249,10 @@ let state = loadState();
 
 function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function monthStart(dateValue = today()) {
+  return `${dateValue.slice(0, 7)}-01`;
 }
 
 function loadState() {
@@ -264,10 +269,21 @@ function loadState() {
     cashOperationBranchId: parsed.cashOperationBranchId || "",
     attendanceDate: parsed.attendanceDate || today(),
     attendanceBranchId: parsed.attendanceBranchId || "",
+    reviewAttendanceFilters: { branchId: "all", from: monthStart(), to: today(), ...(parsed.reviewAttendanceFilters || {}) },
     attendanceRecords: parsed.attendanceRecords || [],
     cashMovements: parsed.cashMovements || [],
     dailyCapitals: parsed.dailyCapitals || [],
     destinations: parsed.destinations || seedState.destinations,
+    cashAdvances: (parsed.cashAdvances || seedState.cashAdvances).map((advance) => {
+      const amount = Number(advance.amount || 0);
+      const inferredDeduction = Math.max(amount - Number(advance.balance || 0), 0);
+      const totalDeduction = advance.totalDeduction == null ? inferredDeduction : Number(advance.totalDeduction || 0);
+      return {
+        ...advance,
+        totalDeduction,
+        balance: Math.max(amount - totalDeduction, 0),
+      };
+    }),
     transactions: (parsed.transactions || seedState.transactions).map((transaction) => ({
       ...transaction,
       basePrice: transaction.basePrice ?? transaction.price ?? 0,
@@ -1053,22 +1069,50 @@ function cashOperationalHistory(branchId) {
 }
 
 function reviewAttendanceView() {
-  const branchId = currentAttendanceBranchId();
-  const records = activeAttendanceRecords().filter((record) => record.branchId === branchId);
-  return page("Review Attendance", "Current list of employees who are on duty.", `
+  const filters = reviewAttendanceFilterValues();
+  const records = reviewAttendanceRecords(filters);
+  const branchLabel = filters.branchId === "all" ? "All branches" : branchName(filters.branchId);
+  return page("Review Attendance", "List of employees on duty by branch and date range.", `
     <section class="grid">
       <div class="panel">
         <div class="panel-head"><h3>Filters</h3></div>
         <div class="form-grid">
-          ${attendanceBranchSelect(branchId)}
+          ${reviewAttendanceBranchSelect(filters.branchId)}
+          <label>Date from<input type="date" value="${filters.from}" data-review-attendance-filter="from"></label>
+          <label>Date to<input type="date" value="${filters.to}" data-review-attendance-filter="to"></label>
         </div>
       </div>
       <div class="panel">
-      <div class="panel-head"><h3>On duty now</h3><span class="mini-label">${branchName(branchId)}</span></div>
+      <div class="panel-head"><h3 class="danger-text">Employees on duty</h3><span class="mini-label">${branchLabel} | ${filters.from} to ${filters.to}</span></div>
       ${attendanceTable(records)}
       </div>
     </section>
   `);
+}
+
+function reviewAttendanceFilterValues() {
+  const filters = state.reviewAttendanceFilters || { branchId: "all", from: monthStart(), to: today() };
+  const branchIds = visibleBranches().map((branch) => branch.id);
+  const branchId = filters.branchId === "all" || branchIds.includes(filters.branchId) ? filters.branchId : "all";
+  return {
+    branchId,
+    from: filters.from || monthStart(),
+    to: filters.to || today(),
+  };
+}
+
+function reviewAttendanceBranchSelect(selectedValue = "all") {
+  const branches = visibleBranches();
+  return `<label>Branch<select data-review-attendance-filter="branchId"><option value="all" ${selectedValue === "all" ? "selected" : ""}>All branches</option>${branches.map((branch) => `<option value="${branch.id}" ${selectedValue === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}</select></label>`;
+}
+
+function reviewAttendanceRecords(filters) {
+  const branchIds = visibleBranches().map((branch) => branch.id);
+  return state.attendanceRecords
+    .filter((record) => branchIds.includes(record.branchId))
+    .filter((record) => filters.branchId === "all" || record.branchId === filters.branchId)
+    .filter((record) => (!filters.from || record.date >= filters.from) && (!filters.to || record.date <= filters.to))
+    .sort((a, b) => `${b.date}${b.clockInAt}`.localeCompare(`${a.date}${a.clockInAt}`));
 }
 
 function attendanceTable(records) {
@@ -1873,10 +1917,10 @@ function partyForm(party = null) {
       <div class="form-grid">
         ${select("type", [["customer", "Customer"], ["supplier", "Supplier"]], party?.type)}
         ${input("name", "Name", "text", party?.name || "")}
-        ${input("contact", "Contact number", "text", party?.contact || "")}
+        ${optionalInput("contact", "Contact number", "text", party?.contact || "")}
         ${select("status", [["active", "Active"], ["inactive", "Inactive"]], party?.status)}
       </div>
-      <label style="margin-top:10px">Address<textarea name="address" required>${party?.address || ""}</textarea></label>
+      <label style="margin-top:10px">Address<textarea name="address">${party?.address || ""}</textarea></label>
       <label style="margin-top:10px">Notes<textarea name="notes">${party?.notes || ""}</textarea></label>
       <button class="btn" type="submit" style="margin-top:12px">${party ? "Save changes" : "Save"}</button>
     </form>
@@ -1976,6 +2020,21 @@ function payrollView() {
   return page("Payroll", "Manage employees, cash advances, and payroll net pay calculations.", `
     <section class="grid">
       ${payrollForm(editingPayroll)}
+      <form class="panel" data-action="add-cash-advance">
+        <div class="panel-head"><h3>New cash advance</h3></div>
+        <div class="form-grid">
+          ${employeeSelect("employeeId")}
+          ${dateInput("date", today())}
+          ${input("amount", "Amount", "number", "0", "0.01")}
+          ${input("reason", "Reason", "text")}
+          ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]])}
+        </div>
+        <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
+      </form>
+      <div class="panel">
+        <div class="panel-head"><h3>Cash advance records</h3></div>
+        ${cashAdvanceTable()}
+      </div>
       <div class="panel">
         <div class="panel-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Download all payrolls</button></div>
         ${payrollSummaryTable()}
@@ -1984,40 +2043,21 @@ function payrollView() {
         <div class="panel-head"><h3>Attendance payroll tracker</h3><span class="mini-label">Regular and O.T hours</span></div>
         ${attendancePayrollTracker()}
       </div>
-      <div class="split">
-        <div class="panel">
-          <div class="panel-head"><h3>Employee payroll details</h3><button class="btn secondary" data-view="employees">Maintain employees</button></div>
-          ${table(["Name", "Position", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Years of Service"], state.employees.map((employee) => `
-            <tr><td>${employee.name}</td><td>${employee.position}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${yearsOfService(employee.startDate)}</td></tr>
-          `))}
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h3>Cash advances</h3></div>
-          ${table(["Employee", "Date", "Amount", "Reason", "Balance", "Status"], state.cashAdvances.map((advance) => `
-            <tr><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td class="amount">${money(advance.balance)}</td><td>${badge(advance.status)}</td></tr>
-          `))}
-        </div>
-      </div>
-      <form class="panel" data-action="add-cash-advance">
-        <div class="panel-head"><h3>Cash advance</h3></div>
-        <div class="form-grid">
-          ${employeeSelect("employeeId")}
-          ${dateInput("date", today())}
-          ${input("amount", "Amount", "number", "0", "0.01")}
-          ${input("reason", "Reason", "text")}
-          ${input("balance", "Balance", "number", "0", "0.01")}
-          ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]])}
-        </div>
-        <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
-      </form>
     </section>
   `);
+}
+
+function cashAdvanceTable() {
+  return table(["Employee", "Date", "Amount", "Reason", "Status"], state.cashAdvances.map((advance) => `
+    <tr><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
+  `));
 }
 
 function payrollForm(run = null) {
   const action = run ? "update-payroll" : "add-payroll";
   const employee = state.employees.find((item) => item.id === run?.employeeId) || state.employees[0] || {};
-  const monthlySalary = run?.monthlySalary ?? (employee.salaryType === "monthly" ? employee.rate : employee.rate * 26) ?? 0;
+  const monthlySalary = run?.monthlySalary ?? Number(employee.rate || 0);
+  const periodRange = payrollPeriodRange(run);
   return `
     <form class="panel" data-action="${action}" data-payroll-form>
       <div class="panel-head">
@@ -2026,7 +2066,7 @@ function payrollForm(run = null) {
       </div>
       ${run ? `<input type="hidden" name="id" value="${run.id}">` : ""}
       <div class="form-grid">
-        ${input("period", "Payroll period", "text", run?.period || "2026-07-16 to 2026-07-31")}
+        ${payrollPeriodInputs(periodRange)}
         ${dateInput("payDate", run?.payDate || today(), "Pay date")}
         ${employeeSelect("employeeId", run?.employeeId)}
         ${input("department", "Department", "text", run?.department || "Operations")}
@@ -2037,7 +2077,7 @@ function payrollForm(run = null) {
         <div>
           <h3>Income</h3>
           <div class="form-grid">
-            ${payrollNumber("basicPay", "Bi-monthly salary", run?.basicPay ?? Number(monthlySalary || 0) / 2)}
+            ${payrollNumber("basicPay", "Bi-monthly salary", run?.basicPay ?? Number(monthlySalary || 0))}
             ${payrollNumber("adjustment", "Adjustment", run?.adjustment)}
             ${payrollNumber("nightDiffHours", "Night diff hours", run?.nightDiffHours)}
             ${payrollNumber("nightDiffAmount", "Night diff amount", run?.nightDiffAmount)}
@@ -2082,8 +2122,24 @@ function payrollForm(run = null) {
         </div>
       </section>
       <div class="notice payroll-total" data-payroll-summary>Gross Pay: PHP 0.00 | Deductions: PHP 0.00 | Net Pay: PHP 0.00</div>
+      <div class="notice" data-payroll-attendance-summary style="margin-top:10px">Attendance payroll: select employee and payroll period.</div>
       <button class="btn" type="submit" style="margin-top:12px">${run ? "Save changes" : "Calculate and save"}</button>
     </form>
+  `;
+}
+
+function payrollPeriodRange(run = null) {
+  const period = String(run?.period || "");
+  const match = period.match(/(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/);
+  if (run?.periodStart || run?.periodEnd) return { start: run.periodStart || match?.[1] || today(), end: run.periodEnd || match?.[2] || today() };
+  if (match) return { start: match[1], end: match[2] };
+  return { start: today(), end: today() };
+}
+
+function payrollPeriodInputs(range) {
+  return `
+    <label>Payroll period from<input name="periodStart" type="date" value="${range.start}" required></label>
+    <label>Payroll period to<input name="periodEnd" type="date" value="${range.end}" required></label>
   `;
 }
 
@@ -2127,10 +2183,79 @@ function payrollTotals(run) {
   return { grossPay, totalDeduction, netPay: grossPay - totalDeduction };
 }
 
+function payrollHourlyRate(employee) {
+  const rate = Number(employee?.rate || 0);
+  return rate / 8;
+}
+
+function cashAdvanceDeductionFor(employeeId, periodStart, periodEnd) {
+  return state.cashAdvances
+    .filter((advance) => (
+      advance.employeeId === employeeId
+      && advance.status === "active"
+      && (!periodStart || advance.date >= periodStart)
+      && (!periodEnd || advance.date <= periodEnd)
+    ))
+    .reduce((sum, advance) => sum + Math.max(Number(advance.totalDeduction || 0), 0), 0);
+}
+
+function attendancePayrollTotals(employeeId, periodStart, periodEnd) {
+  const employee = state.employees.find((item) => item.id === employeeId);
+  const records = state.attendanceRecords.filter((record) => (
+    record.employeeId === employeeId
+    && record.clockOutAt
+    && (!periodStart || record.date >= periodStart)
+    && (!periodEnd || record.date <= periodEnd)
+  ));
+  const hours = records.reduce((totals, record) => {
+    const recordHours = attendanceHours(record);
+    totals.regular += recordHours.regular;
+    totals.overtime += recordHours.overtime;
+    return totals;
+  }, { regular: 0, overtime: 0 });
+  const hourlyRate = payrollHourlyRate(employee);
+  return {
+    records,
+    regularHours: hours.regular,
+    overtimeHours: hours.overtime,
+    hourlyRate,
+    basicPay: hours.regular * hourlyRate,
+    overtimeAmount: hours.overtime * hourlyRate * 1.25,
+  };
+}
+
+function applyAttendancePayrollCalculation(form) {
+  const employeeId = form.elements.namedItem("employeeId")?.value || "";
+  const periodStart = form.elements.namedItem("periodStart")?.value || "";
+  const periodEnd = form.elements.namedItem("periodEnd")?.value || "";
+  const totals = attendancePayrollTotals(employeeId, periodStart, periodEnd);
+  const cashAdvanceDeduction = cashAdvanceDeductionFor(employeeId, periodStart, periodEnd);
+  const monthlySalary = form.elements.namedItem("monthlySalary");
+  const basicPay = form.elements.namedItem("basicPay");
+  const overtimeHours = form.elements.namedItem("overtimeHours");
+  const overtimeAmount = form.elements.namedItem("overtimeAmount");
+  const cashAdvanceDeductionField = form.elements.namedItem("cashAdvanceDeduction");
+  if (totals.records.length) {
+    if (monthlySalary) monthlySalary.value = totals.basicPay.toFixed(2);
+    if (basicPay) basicPay.value = totals.basicPay.toFixed(2);
+  }
+  if (overtimeHours) overtimeHours.value = totals.overtimeHours.toFixed(2);
+  if (overtimeAmount) overtimeAmount.value = totals.overtimeAmount.toFixed(2);
+  if (cashAdvanceDeductionField) cashAdvanceDeductionField.value = cashAdvanceDeduction.toFixed(2);
+  const summary = form.querySelector("[data-payroll-attendance-summary]");
+  if (summary) {
+    summary.textContent = `Attendance payroll: ${totals.records.length} record${totals.records.length === 1 ? "" : "s"} | Regular ${totals.regularHours.toFixed(2)} hrs | Basic salary ${money(totals.basicPay)} | O.T ${totals.overtimeHours.toFixed(2)} hrs | O.T pay ${money(totals.overtimeAmount)} | Cash advance ${money(cashAdvanceDeduction)}`;
+  }
+}
+
 function payrollFormData(data, existing = null) {
+  const periodStart = data.periodStart || "";
+  const periodEnd = data.periodEnd || "";
   const values = {
     id: existing?.id || id("pr"),
-    period: data.period,
+    period: periodStart && periodEnd ? `${periodStart} to ${periodEnd}` : data.period,
+    periodStart,
+    periodEnd,
     payDate: data.payDate,
     employeeId: data.employeeId,
     department: data.department,
@@ -2266,7 +2391,7 @@ function branchForm(branch = null) {
       <div class="form-grid">
         ${input("code", "Code", "text", branch?.code || "")}
         ${input("name", "Location name", "text", branch?.name || "")}
-        ${input("contact", "Contact number", "text", branch?.contact || "")}
+        ${optionalInput("contact", "Contact number", "text", branch?.contact || "")}
         ${select("status", [["active", "Active"], ["inactive", "Inactive"]], branch?.status || "active")}
       </div>
       <label style="margin-top:10px">Address<textarea name="address" placeholder="Full branch address">${branch?.address || ""}</textarea></label>
@@ -2310,7 +2435,7 @@ function destinationForm(destination = null) {
       <div class="form-grid">
         ${select("type", [["buyer", "Buyer"], ["warehouse", "Warehouse"], ["processor", "Processor"], ["other", "Other"]], destination?.type || "buyer")}
         ${input("name", "Destination name", "text", destination?.name || "")}
-        ${input("contact", "Contact number", "text", destination?.contact || "")}
+        ${optionalInput("contact", "Contact number", "text", destination?.contact || "")}
         ${select("status", [["active", "Active"], ["inactive", "Inactive"]], destination?.status || "active")}
       </div>
       <label style="margin-top:10px">Address<textarea name="address" placeholder="Delivery or buyer address">${destination?.address || ""}</textarea></label>
@@ -2368,6 +2493,10 @@ function badge(text) {
 
 function input(name, labelText, type = "text", value = "", step = "") {
   return `<label>${t(labelText)}<input name="${name}" type="${type}" value="${value}" ${step ? `step="${step}"` : ""} required></label>`;
+}
+
+function optionalInput(name, labelText, type = "text", value = "", step = "") {
+  return `<label>${t(labelText)}<input name="${name}" type="${type}" value="${value}" ${step ? `step="${step}"` : ""}></label>`;
 }
 
 function numberInput(name, labelText, value = "", step = "0.01", required = true) {
@@ -2684,6 +2813,15 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-review-attendance-filter]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.reviewAttendanceFilters = state.reviewAttendanceFilters || { branchId: "all", from: monthStart(), to: today() };
+      state.reviewAttendanceFilters[field.dataset.reviewAttendanceFilter] = field.value;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-print-cash-operation]").forEach((button) => {
     button.addEventListener("click", () => printCashOperation(button.dataset.printCashOperation, button.dataset.printCashDate || today()));
   });
@@ -2953,6 +3091,7 @@ function updateDeliveryStockLimits(form, showAlert = false) {
 }
 
 function updatePayrollSummary(form) {
+  applyAttendancePayrollCalculation(form);
   const data = Object.fromEntries(new FormData(form));
   const totals = payrollTotals(payrollFormData(data, state.payrollRuns.find((run) => run.id === data.id)));
   const summary = form.querySelector("[data-payroll-summary]");
@@ -3502,7 +3641,9 @@ function yearsOfService(startDate) {
 }
 
 function addCashAdvance(data) {
-  state.cashAdvances.push({ id: id("ca"), employeeId: data.employeeId, date: data.date, amount: Number(data.amount), reason: data.reason, balance: Number(data.balance), status: data.status });
+  const amount = Number(data.amount || 0);
+  const totalDeduction = amount;
+  state.cashAdvances.push({ id: id("ca"), employeeId: data.employeeId, date: data.date, amount, reason: data.reason, totalDeduction, balance: Math.max(amount - totalDeduction, 0), status: data.status });
   saveState();
   render();
 }
