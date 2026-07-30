@@ -169,7 +169,10 @@ const seedState = {
   activeView: "dashboard",
   language: "en",
   reportFilters: { from: "", to: "", branchId: "all" },
+  reportTab: "summary",
   inventoryFilters: { materialId: "all", branchId: "all" },
+  inventoryTab: "position",
+  cashOperationTab: "starting",
   editingTransactionId: null,
   editingPartyId: null,
   editingDeliveryId: null,
@@ -435,28 +438,58 @@ function render() {
 function loginView() {
   return `
     <section class="login-page">
-      <div class="landing-shell">
-        <section class="landing-copy">
-          <div class="landing-brand"><span class="brand-logo hero-logo">SW</span><span>ScrapWise</span></div>
-          <h1>Turn every kilo into clear business insight.</h1>
-          <p>Manage buying, selling, inventory, deliveries, attendance, payroll, and reports from one clean green operations hub.</p>
-          <div class="landing-actions">
-            <a href="#login" class="btn hero-btn">Open operations</a>
-            <span>Built for focused junkshop operations</span>
+      <div class="landing-wrap">
+        <header class="landing-nav">
+          <div class="landing-brand"><span class="brand-logo hero-logo">SW</span><span><strong>ScrapWise</strong><small>Turn every kilo into clear business insight.</small></span></div>
+          <nav>
+            <a href="#workflow">Workflow</a>
+            <a href="#login">Login</a>
+          </nav>
+        </header>
+        <div class="landing-shell">
+          <section class="landing-copy">
+            <span class="landing-kicker">Scraps inventory management</span>
+            <h1>Control scrap buying, stock, deliveries, and payroll in one green workspace.</h1>
+            <p>ScrapWise gives junkshop teams a clear daily view of materials, cash, customers, branch movement, and employee records without jumping between spreadsheets.</p>
+            <div class="landing-actions">
+              <a href="#login" class="btn hero-btn">Open operations</a>
+              <span>Built for focused junkshop operations</span>
+            </div>
+            <div class="hero-metrics">
+              ${metric("Inventory", "Live")}
+              ${metric("Receipts", "Printable")}
+              ${metric("Payroll", "Linked")}
+            </div>
+          </section>
+          <div class="landing-visual" aria-hidden="true">
+            <div class="visual-card visual-main">
+              <div class="visual-head"><span></span><span></span><span></span></div>
+              <h3>Scrap Operations Snapshot</h3>
+              <div class="visual-row"><span>Plastic</span><strong>138 kg</strong></div>
+              <div class="visual-row"><span>Copper</span><strong>PHP 6,720</strong></div>
+              <div class="visual-row"><span>Truck load</span><strong>In transit</strong></div>
+              <div class="visual-bars"><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="visual-card visual-bin">
+              <strong>SCRAP BIN</strong>
+              <span>tracked</span>
+            </div>
           </div>
-          <div class="hero-metrics">
-            ${metric("Stock", "Live")}
-            ${metric("Receipt", "Ready")}
-            ${metric("Attendance", "Photo")}
-          </div>
+          <form class="login-panel" id="login" data-action="login">
+            <span class="login-eyebrow">Secure access</span>
+            <h2>Welcome back</h2>
+            <p>Sign in and ScrapWise will open the correct role access for admin, staff, or payroll users.</p>
+            <label>Email or username<input name="email" value="admin@junkshop.local" autocomplete="username" required></label>
+            <label>Password<input name="password" type="password" value="admin123" autocomplete="current-password" required></label>
+            <button class="btn" type="submit">Log in</button>
+          </form>
+        </div>
+        <section class="landing-workflow" id="workflow">
+          <article><span>01</span><h3>Log scrap</h3><p>Record seller, material, kilo, price per demand, payment, and printable receipts.</p></article>
+          <article><span>02</span><h3>Track value</h3><p>Monitor stock quantity, estimated value, locations, and material movement in real time.</p></article>
+          <article><span>03</span><h3>Move loads</h3><p>Validate truck loads against available stock and review delivered weight discrepancies.</p></article>
+          <article><span>04</span><h3>Close payroll</h3><p>Connect attendance and cash advances to payroll period calculations.</p></article>
         </section>
-        <form class="login-panel" id="login" data-action="login">
-          <h2>Sign in</h2>
-          <p>Enter your assigned account. ScrapWise will open the correct access level for your role.</p>
-          <label>Email or username<input name="email" value="admin@junkshop.local" autocomplete="username" required></label>
-          <label>Password<input name="password" type="password" value="admin123" autocomplete="current-password" required></label>
-          <button class="btn" type="submit">Log in</button>
-        </form>
       </div>
     </section>
   `;
@@ -550,35 +583,45 @@ function dashboardView() {
   const transactions = branchFilter(state.transactions);
   const monthRange = currentMonthRange();
   const monthlyTransactions = transactions.filter((tx) => tx.date >= monthRange.start && tx.date <= monthRange.end);
-  const inventoryValue = stockPositionRows().reduce((sum, row) => sum + row.estimatedValue, 0);
+  const stockRows = stockPositionRows();
+  const inventoryValue = stockRows.reduce((sum, row) => sum + row.estimatedValue, 0);
   const monthlyPurchases = totalByType(monthlyTransactions, "purchase");
   const monthlySales = totalByType(monthlyTransactions, "sale");
   const pending = transactions.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
-  const dashboardCash = cashPosition(currentCapitalBranchId());
   const monthlyProfit = profitFor(monthlyTransactions);
 
   return page("Dashboard", "Monthly and weekly KPI view for buying, selling, stock, deliveries, and cash.", `
-    <section class="dashboard-hero">
+    <section class="dashboard-hero inventory-hero">
       <div>
-        <span class="dash-eyebrow">ScrapWise operations</span>
-        <h1>Monthly and weekly KPI dashboard</h1>
-        <p>${monthRange.label} - live operational snapshot</p>
+        <span class="dash-eyebrow">ScrapWise inventory command center</span>
+        <h1>Scraps Inventory Management</h1>
+        <p>Generated from buying, selling, stock movement, and truck delivery records.</p>
+        <div class="hero-flow">
+          <span>Maintenance & operation</span>
+          <strong></strong>
+          <span>Asset-level scrap tracking</span>
+        </div>
       </div>
-      <div class="dash-date">${today()}</div>
+      <div class="scrap-scene" aria-hidden="true">
+        <div class="robot-arm"><span></span></div>
+        <div class="scrap-parts">
+          <i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="scrap-bin">
+          <strong>SCRAP BIN</strong>
+          <span>recycle</span>
+        </div>
+      </div>
     </section>
 
-    <section class="dash-kpi-band">
-      <div class="dash-band-head">
-        <h3>Amount Summary</h3>
-        <span>Cash and value position</span>
-      </div>
-      <div class="dash-kpi-grid amount-summary-grid">
-        ${dashboardKpi("Purchases", money(monthlyPurchases), `${kg(weightByType(monthlyTransactions, "purchase"))} bought`, "green")}
-        ${dashboardKpi("Sales", money(monthlySales), `${kg(weightByType(monthlyTransactions, "sale"))} sold`, "blue")}
-        ${dashboardKpi("Gross profit", money(monthlyProfit), isAdmin() ? "Admin-visible income view" : "Estimated income", "purple")}
-        ${dashboardKpi("Inventory value", money(inventoryValue), `${stockPositionRows().length} stock rows`, "teal")}
-        ${dashboardKpi("Operating cash", money(dashboardCash.remaining), "Expected cash today", "teal")}
-        ${dashboardKpi("Pending payments", money(pending), "Open balances", "orange")}
+    <section class="scrap-pipeline">
+      <div class="pipeline-title"><span></span><h3>Operations Snapshot</h3><span></span></div>
+      <div class="pipeline-grid">
+        ${pipelineCard("Purchases", "blue", [["Total purchases", money(monthlyPurchases)], ["Weight bought", kg(weightByType(monthlyTransactions, "purchase"))], ["Purchase lines", `${monthlyTransactions.filter((tx) => tx.type === "purchase").length} records`]])}
+        ${pipelineCard("Sales", "orange", [["Total sales", money(monthlySales)], ["Weight sold", kg(weightByType(monthlyTransactions, "sale"))], ["Sale lines", `${monthlyTransactions.filter((tx) => tx.type === "sale").length} records`]])}
+        ${pipelineCard("Gross profit", "green", [["Amount", money(monthlyProfit)], ["View", isAdmin() ? "Admin-visible income view" : "Estimated income"], ["Period", monthRange.label]])}
+        ${pipelineCard("Inventory value", "navy", [["Value", money(inventoryValue)], ["Stock rows", `${stockRows.length} stock rows`], ["Location", "All visible branches"]])}
+        ${pipelineCard("Pending payments", "orange", [["Balance", money(pending)], ["Status", "Open balances"], ["Records", `${transactions.filter((tx) => Number(tx.balance || 0) > 0).length} pending`]])}
       </div>
     </section>
 
@@ -593,6 +636,15 @@ function dashboardView() {
       </div>
     </section>
   `);
+}
+
+function pipelineCard(title, tone, rows) {
+  return `
+    <article class="pipeline-card ${tone}">
+      <h4>${title}</h4>
+      <div>${rows.map(([label, value]) => `<p><span>${label}</span><strong>${value}</strong></p>`).join("")}</div>
+    </article>
+  `;
 }
 
 function metric(label, value) {
@@ -648,15 +700,6 @@ function profitFor(transactions) {
     if (tx.type !== "sale" || !material) return sum;
     return sum + Number(tx.weight || 0) * (Number(tx.price || 0) - Number(material.buyPrice || 0));
   }, 0);
-}
-
-function dashboardKpi(label, value, detail, tone = "green") {
-  return `
-    <article class="dash-kpi ${tone}">
-      <strong>${value}</strong>
-      <div><span>${label}</span><small>${detail}</small></div>
-    </article>
-  `;
 }
 
 function materialFunnel(rows) {
@@ -816,6 +859,7 @@ function attendanceView() {
   return page("Attendance", "Admin-managed employee time in and time out by branch location.", `
     <section class="grid">
       ${attendanceForm(branchId, date, employees, editingRecord)}
+      ${attendanceCashAdvancePanel(branchId, date, employees)}
       <div class="panel">
         <div class="panel-head"><h3>Employees in this branch</h3><span class="mini-label">${branchName(branchId)}</span></div>
         ${table(["Employee", "Position", "Rate", "Status"], employees.map((employee) => `
@@ -875,6 +919,36 @@ function attendanceForm(branchId, date, employees, record = null) {
   `;
 }
 
+function attendanceCashAdvancePanel(branchId, date, employees) {
+  const employeeIds = employees.map((employee) => employee.id);
+  const advances = state.cashAdvances
+    .filter((advance) => employeeIds.includes(advance.employeeId) && advance.date === date)
+    .slice()
+    .reverse();
+  return `
+    <form class="panel" data-action="add-cash-advance">
+      <div class="panel-head">
+        <h3>Cash advance before time out</h3>
+        <span class="mini-label">${branchName(branchId)} - ${date}</span>
+      </div>
+      <div class="form-grid">
+        ${attendanceEmployeeSelect(employees)}
+        ${dateInput("date", date)}
+        ${input("amount", "Amount", "number", "", "0.01")}
+        ${input("reason", "Reason", "text")}
+        ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]], "active")}
+      </div>
+      <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
+      <div style="margin-top:14px">
+        <div class="mini-label">Cash advances recorded today</div>
+        ${advances.length ? table(["Employee", "Amount", "Reason", "Status"], advances.map((advance) => `
+          <tr><td>${employeeName(advance.employeeId)}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason || ""}</td><td>${badge(advance.status)}</td></tr>
+        `)) : `<div class="notice">No cash advances recorded for this branch date.</div>`}
+      </div>
+    </form>
+  `;
+}
+
 function attendanceEmployeeSelect(employees, selectedValue = "") {
   const options = employees.length
     ? employees.map((employee) => `<option value="${employee.id}" ${selectedValue === employee.id ? "selected" : ""}>${employee.name} - ${employee.position}</option>`).join("")
@@ -900,28 +974,41 @@ function cashOperationView() {
   const openingStarted = position.capital > 0 || Boolean(record);
   const cashMovementEnabled = openingStarted && !operationClosed;
   const cashMovements = record ? cashMovementsFor(branchId, selectedDate) : [];
+  const activeTab = state.cashOperationTab || "starting";
   return page("Cash Operation", "Input opening cash, add paid in/out cash movements, close cash at end of day, and tally sales and expenses.", `
     <section class="grid">
-      <section class="cash-entry-row">
-        ${startingAmountForm(record, branchId, selectedDate, operationClosed)}
-        ${cashMovementForm("paid_in", branchId, selectedDate, cashMovementEnabled, operationClosed)}
-        ${cashMovementForm("paid_out", branchId, selectedDate, cashMovementEnabled, operationClosed)}
-      </section>
-      <section class="cash-close-row">
-        ${closeOperationForm(record, branchId, selectedDate, position, openingStarted, operationClosed)}
-      </section>
       <div class="panel">
-        <div class="panel-head"><h3>Paid in / paid out history</h3></div>
-        ${table(["Date", "Type", "Amount", "Notes", "User"], cashMovements.slice().reverse().map((movement) => `
-          <tr><td>${movement.date}</td><td>${badge(movement.type)}</td><td class="amount">${money(movement.amount)}</td><td>${movement.notes || ""}</td><td>${operatorName(movement.createdBy)}</td></tr>
-        `))}
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Operational history</h3></div>
-        ${cashOperationalHistory(branchId)}
+        <div class="panel-head"><h3>Cash Operation workspace</h3><span class="mini-label">${branchName(branchId)} - ${selectedDate}</span></div>
+        <div class="tab-row">
+          ${cashOperationTabButton("starting", "Starting amount", activeTab)}
+          ${cashOperationTabButton("paid_in", "Paid in", activeTab)}
+          ${cashOperationTabButton("paid_out", "Paid out", activeTab)}
+          ${cashOperationTabButton("movement_history", "Paid in / paid out history", activeTab)}
+          ${cashOperationTabButton("operational_history", "Operational history", activeTab)}
+        </div>
+        ${activeTab === "starting" ? `
+          <section class="cash-tab-grid">
+            ${startingAmountForm(record, branchId, selectedDate, operationClosed)}
+            ${closeOperationForm(record, branchId, selectedDate, position, openingStarted, operationClosed)}
+          </section>
+        ` : ""}
+        ${activeTab === "paid_in" ? cashMovementForm("paid_in", branchId, selectedDate, cashMovementEnabled, operationClosed) : ""}
+        ${activeTab === "paid_out" ? cashMovementForm("paid_out", branchId, selectedDate, cashMovementEnabled, operationClosed) : ""}
+        ${activeTab === "movement_history" ? cashMovementHistoryTable(cashMovements) : ""}
+        ${activeTab === "operational_history" ? cashOperationalHistory(branchId) : ""}
       </div>
     </section>
   `);
+}
+
+function cashOperationTabButton(tab, label, activeTab) {
+  return `<button class="${activeTab === tab ? "active" : ""}" data-cash-operation-tab="${tab}">${label}</button>`;
+}
+
+function cashMovementHistoryTable(cashMovements) {
+  return table(["Date", "Type", "Amount", "Notes", "User"], cashMovements.slice().reverse().map((movement) => `
+    <tr><td>${movement.date}</td><td>${badge(movement.type)}</td><td class="amount">${money(movement.amount)}</td><td>${movement.notes || ""}</td><td>${operatorName(movement.createdBy)}</td></tr>
+  `));
 }
 
 function emptyCashPosition() {
@@ -1694,12 +1781,18 @@ function customerTransactionGroups(transactions) {
 }
 
 function inventoryView() {
-  const movements = branchFilter(state.stockMovements);
   const filters = state.inventoryFilters || { materialId: "all", branchId: "all" };
+  const movements = inventoryFilteredMovements(branchFilter(state.stockMovements), filters);
+  const activeTab = state.inventoryTab || "position";
   return page("Inventory", "Current stock is calculated from all stock movement records.", `
     <section class="grid">
       <div class="panel">
-        <div class="panel-head"><h3>Stock position</h3><button class="btn secondary" data-export-excel="inventory">Download Excel</button></div>
+        <div class="panel-head"><h3>Inventory workspace</h3><button class="btn secondary" data-export-excel="inventory">Download Excel</button></div>
+        <div class="tab-row">
+          ${inventoryTabButton("position", "Stock position", activeTab)}
+          ${inventoryTabButton("movements", "Stock movements", activeTab)}
+          ${inventoryTabButton("materials", "List of materials", activeTab)}
+        </div>
         <div class="form-grid" style="margin-bottom:12px">
           <label>Material<select data-inventory-filter="materialId">
             <option value="all" ${filters.materialId === "all" ? "selected" : ""}>All materials</option>
@@ -1710,21 +1803,74 @@ function inventoryView() {
             ${state.branches.map((branch) => `<option value="${branch.id}" ${filters.branchId === branch.id ? "selected" : ""}>${branch.name}</option>`).join("")}
           </select></label>
         </div>
-        ${table(["Material", "Current Stock", "Estimated Value", "Location"], stockPositionRows(filters).map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`))}
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h3>Stock movements</h3>
-          ${isAdmin() ? `<button class="btn warning" data-modal="adjustment">Manual adjustment</button>` : ""}
-        </div>
-        ${table(["Date", "Material", "Movement", "Quantity", "Reference", "Truck Plate", "Driver", "Delivery Status", "Notes"], movements.slice().reverse().map((move) => {
-          const delivery = deliveryByReference(move.reference);
-          return `<tr><td>${move.date}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${delivery?.truck || ""}</td><td>${delivery?.driver || ""}</td><td>${delivery ? badge(delivery.status) : ""}</td><td>${move.notes || ""}</td></tr>`;
-        }))}
+        ${activeTab === "position" ? inventoryStockPositionTab(filters) : ""}
+        ${activeTab === "movements" ? inventoryMovementsTab(movements) : ""}
+        ${activeTab === "materials" ? inventoryMaterialsTab(filters) : ""}
       </div>
       ${isAdmin() ? adjustmentForm() : ""}
     </section>
   `);
+}
+
+function inventoryTabButton(tab, label, activeTab) {
+  return `<button class="${activeTab === tab ? "active" : ""}" data-inventory-tab="${tab}">${label}</button>`;
+}
+
+function inventoryStockPositionTab(filters) {
+  return table(["Material", "Current Stock", "Estimated Value", "Location"], stockPositionRows(filters).map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`));
+}
+
+function inventoryFilteredMovements(movements, filters) {
+  return movements
+    .filter((move) => filters.materialId === "all" || move.materialId === filters.materialId)
+    .filter((move) => filters.branchId === "all" || move.branchId === filters.branchId);
+}
+
+function inventoryMovementsTab(movements) {
+  return `
+    <div class="panel-head inner-head">
+      <h3>Stock movements</h3>
+      ${isAdmin() ? `<button class="btn warning" data-modal="adjustment">Manual adjustment</button>` : ""}
+    </div>
+    ${table(["Date", "Material", "Movement", "Quantity", "Reference", "Truck Plate", "Driver", "Delivery Status", "Notes"], movements.slice().reverse().map((move) => {
+      const delivery = deliveryByReference(move.reference);
+      return `<tr><td>${move.date}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${delivery?.truck || ""}</td><td>${delivery?.driver || ""}</td><td>${delivery ? badge(delivery.status) : ""}</td><td>${move.notes || ""}</td></tr>`;
+    }))}
+  `;
+}
+
+function inventoryMaterialsTab(filters) {
+  const rows = stockPositionRows(filters).filter((row) => row.currentStockKg !== 0 || filters.materialId !== "all" || filters.branchId !== "all");
+  if (!rows.length) return `<div class="notice">No material stock rows found for the selected filters.</div>`;
+  return `<div class="material-day-list">${rows.map((row) => inventoryMaterialDayCard(row)).join("")}</div>`;
+}
+
+function inventoryMaterialDayCard(row) {
+  const transactions = state.transactions
+    .filter((tx) => tx.materialId === row.materialId && tx.branchId === row.branchId)
+    .sort((a, b) => `${b.date} ${b.number}`.localeCompare(`${a.date} ${a.number}`));
+  const groups = transactions.reduce((items, tx) => {
+    if (!items[tx.date]) items[tx.date] = [];
+    items[tx.date].push(tx);
+    return items;
+  }, {});
+  const daySections = Object.entries(groups).map(([date, items]) => `
+    <div class="material-day">
+      <div class="material-day-head"><strong>${date}</strong><span>${items.length} transaction${items.length === 1 ? "" : "s"}</span></div>
+      ${table(["No.", "Type", "Customer/Supplier", "Kilo", "Estimated Value"], items.map((tx) => `
+        <tr><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${partyName(tx.partyId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.total)}</td></tr>
+      `))}
+    </div>
+  `).join("");
+  return `
+    <article class="material-stock-card">
+      <div class="material-stock-head">
+        <div><h3>${row.material}</h3><span>${row.location}</span></div>
+        <div class="material-stock-summary"><strong>${kg(row.currentStockKg)}</strong><span>${money(row.estimatedValue)}</span></div>
+      </div>
+      ${daySections || `<div class="notice">No transaction lines recorded for this material/location yet.</div>`}
+    </article>
+  `;
 }
 
 function deliveryByReference(reference) {
@@ -2289,6 +2435,7 @@ function reportsView() {
     const cost = tx.weight * (material?.buyPrice || 0);
     return { ...tx, cost, profit: tx.total - cost };
   });
+  const activeTab = state.reportTab || "summary";
 
   return page("Reports", "Filter by date, export operational reports, and restrict income reports to admin users.", `
     <section class="grid">
@@ -2304,26 +2451,77 @@ function reportsView() {
         </div>
       </div>
       <div class="panel">
-        <div class="panel-head"><h3>Daily purchase report</h3><button class="btn secondary" data-export="purchases">Export CSV</button></div>
-        ${transactionReportTable(purchases)}
+        <div class="panel-head"><h3>Report results</h3><span class="mini-label">${transactions.length} filtered transaction${transactions.length === 1 ? "" : "s"}</span></div>
+        <div class="tab-row">
+          ${reportTabButton("summary", "Summary", activeTab)}
+          ${reportTabButton("purchases", "Purchases", activeTab)}
+          ${reportTabButton("sales", "Sales", activeTab)}
+          ${reportTabButton("inventory", "Inventory", activeTab)}
+          ${reportTabButton("income", "Income / Profit", activeTab)}
+        </div>
+        ${activeTab === "summary" ? reportSummaryTab(transactions, purchases, sales, profitRows) : ""}
+        ${activeTab === "purchases" ? reportPurchasesTab(purchases) : ""}
+        ${activeTab === "sales" ? reportSalesTab(sales) : ""}
+        ${activeTab === "inventory" ? reportInventoryTab() : ""}
+        ${activeTab === "income" ? reportIncomeTab(profitRows) : ""}
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Daily sales report</h3><button class="btn secondary" data-export="sales">Export CSV</button></div>
-        ${transactionReportTable(sales)}
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Inventory report</h3><button class="btn secondary" data-export="inventory">Export CSV</button></div>
-        ${stockTable()}
-      </div>
-      ${isAdmin() ? `
-        <div class="panel">
-          <div class="panel-head"><h3>Income and profit report</h3><button class="btn secondary" data-export="income">Export CSV</button></div>
-          ${table(["Date", "Material", "Sales", "Estimated Cost", "Profit"], profitRows.map((tx) => `
-            <tr><td>${tx.date}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
-          `))}
-        </div>` : `<div class="notice">Income and profit reports are visible only to admin users.</div>`}
     </section>
   `);
+}
+
+function reportTabButton(tab, label, activeTab) {
+  return `<button class="${activeTab === tab ? "active" : ""}" data-report-tab="${tab}">${label}</button>`;
+}
+
+function reportSummaryTab(transactions, purchases, sales, profitRows) {
+  const totalPurchases = totalByType(purchases, "purchase");
+  const totalSales = totalByType(sales, "sale");
+  const totalProfit = profitRows.reduce((sum, row) => sum + Number(row.profit || 0), 0);
+  const pending = transactions.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
+  return `
+    <div class="report-summary-grid">
+      ${reportSummaryCard("Transactions", transactions.length, "Filtered records")}
+      ${reportSummaryCard("Purchases", money(totalPurchases), `${kg(weightByType(purchases, "purchase"))} bought`)}
+      ${reportSummaryCard("Sales", money(totalSales), `${kg(weightByType(sales, "sale"))} sold`)}
+      ${reportSummaryCard("Pending", money(pending), "Open balances")}
+      ${isAdmin() ? reportSummaryCard("Profit", money(totalProfit), "Admin income view") : reportSummaryCard("Profit", "Restricted", "Admin only")}
+    </div>
+  `;
+}
+
+function reportSummaryCard(label, value, detail) {
+  return `<article class="report-summary-card"><span>${label}</span><strong>${value}</strong><small>${detail}</small></article>`;
+}
+
+function reportPurchasesTab(purchases) {
+  return `
+    <div class="panel-head inner-head"><h3>Daily purchase report</h3><button class="btn secondary" data-export="purchases">Export CSV</button></div>
+    ${transactionReportTable(purchases)}
+  `;
+}
+
+function reportSalesTab(sales) {
+  return `
+    <div class="panel-head inner-head"><h3>Daily sales report</h3><button class="btn secondary" data-export="sales">Export CSV</button></div>
+    ${transactionReportTable(sales)}
+  `;
+}
+
+function reportInventoryTab() {
+  return `
+    <div class="panel-head inner-head"><h3>Inventory report</h3><button class="btn secondary" data-export="inventory">Export CSV</button></div>
+    ${stockTable()}
+  `;
+}
+
+function reportIncomeTab(profitRows) {
+  if (!isAdmin()) return `<div class="notice">Income and profit reports are visible only to admin users.</div>`;
+  return `
+    <div class="panel-head inner-head"><h3>Income and profit report</h3><button class="btn secondary" data-export="income">Export CSV</button></div>
+    ${table(["Date", "Material", "Sales", "Estimated Cost", "Profit"], profitRows.map((tx) => `
+      <tr><td>${tx.date}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
+    `))}
+  `;
 }
 
 function transactionReportTable(rows) {
@@ -2562,10 +2760,29 @@ function bindEvents() {
   document.querySelectorAll("form[data-action]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (form.dataset.submitting === "yes") return;
       if (form.matches("[data-delivery-form]") && !updateDeliveryStockLimits(form, true)) return;
       if (form.reportValidity && !form.reportValidity()) return;
+      form.dataset.submitting = "yes";
+      form.querySelectorAll("button[type='submit']").forEach((button) => {
+        button.disabled = true;
+        button.dataset.originalText = button.textContent;
+        button.textContent = "Saving...";
+      });
       handleForm(form.dataset.action, Object.fromEntries(new FormData(form)));
+      setTimeout(() => {
+        if (!document.body.contains(form)) return;
+        form.dataset.submitting = "";
+        form.querySelectorAll("button[type='submit']").forEach((button) => {
+          button.disabled = false;
+          button.textContent = button.dataset.originalText || button.textContent;
+        });
+      }, 300);
     });
+  });
+
+  document.querySelectorAll("input[type='number']").forEach((field) => {
+    field.addEventListener("input", () => highlightPositiveNumberFields());
   });
 
   document.querySelectorAll("[data-action='logout']").forEach((button) => button.addEventListener("click", () => {
@@ -2835,6 +3052,14 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-cash-operation-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.cashOperationTab = button.dataset.cashOperationTab;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-transaction-form]").forEach((form) => {
     const update = (event) => {
       updateTransactionAmounts(form, event?.target);
@@ -2865,6 +3090,8 @@ function bindEvents() {
     updatePayrollSummary(form);
   });
 
+  highlightPositiveNumberFields();
+
   document.querySelector("[data-filter='party-search']")?.addEventListener("input", (event) => {
     const query = event.target.value.toLowerCase();
     const filtered = state.parties.filter((party) => `${party.name} ${party.contact}`.toLowerCase().includes(query));
@@ -2880,10 +3107,26 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-inventory-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.inventoryTab = button.dataset.inventoryTab;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-report-filter]").forEach((field) => {
     field.addEventListener("change", () => {
       state.reportFilters = state.reportFilters || { from: "", to: "", branchId: "all" };
       state.reportFilters[field.dataset.reportFilter] = field.value;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-report-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reportTab = button.dataset.reportTab;
       saveState();
       render();
     });
@@ -3008,6 +3251,7 @@ function updateTransactionAmounts(form, sourceField = null) {
   const balance = Math.max(total - paid, 0);
   const summary = form.querySelector("[data-transaction-summary]");
   if (summary) summary.textContent = `Total: ${money(total)} | Balance: ${money(balance)}`;
+  highlightPositiveNumberFields(form);
 }
 
 function transactionDateChanged(form) {
@@ -3080,6 +3324,7 @@ function updateDeliveryStockLimits(form, showAlert = false) {
   if (firstShortage && showAlert) {
     alert(`Delivery blocked: ${materialName(firstShortage.materialId)} loaded weight exceeds inventory.\n\nAvailable stock: ${kg(firstShortage.availableStock)}\nLoaded weight: ${kg(firstShortage.loadedWeight)}`);
   }
+  highlightPositiveNumberFields(form);
   return !firstShortage;
 }
 
@@ -3089,6 +3334,14 @@ function updatePayrollSummary(form) {
   const totals = payrollTotals(payrollFormData(data, state.payrollRuns.find((run) => run.id === data.id)));
   const summary = form.querySelector("[data-payroll-summary]");
   if (summary) summary.textContent = `Gross Pay: ${money(totals.grossPay)} | Deductions: ${money(totals.totalDeduction)} | Net Pay: ${money(totals.netPay)}`;
+  highlightPositiveNumberFields(form);
+}
+
+function highlightPositiveNumberFields(scope = document) {
+  scope.querySelectorAll("input[type='number']").forEach((field) => {
+    const value = Number(field.value || 0);
+    field.classList.toggle("positive-value", Number.isFinite(value) && value > 0);
+  });
 }
 
 function transactionValues(data, existingNumber = null) {
@@ -3588,7 +3841,16 @@ function deleteDestination(destinationId) {
 }
 
 function addPayroll(data) {
-  state.payrollRuns.push(payrollFormData(data));
+  const existingIndex = state.payrollRuns.findIndex((run) => (
+    run.employeeId === data.employeeId
+    && (run.periodStart || "") === (data.periodStart || "")
+    && (run.periodEnd || "") === (data.periodEnd || "")
+  ));
+  if (existingIndex >= 0) {
+    state.payrollRuns[existingIndex] = payrollFormData(data, state.payrollRuns[existingIndex]);
+  } else {
+    state.payrollRuns.push(payrollFormData(data));
+  }
   saveState();
   render();
 }
@@ -3663,6 +3925,10 @@ function yearsOfService(startDate) {
 
 function addCashAdvance(data) {
   const amount = Number(data.amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    alert("Cash advance blocked: amount must be greater than 0.");
+    return;
+  }
   const totalDeduction = amount;
   state.cashAdvances.push({ id: id("ca"), employeeId: data.employeeId, date: data.date, amount, reason: data.reason, totalDeduction, balance: Math.max(amount - totalDeduction, 0), status: data.status });
   saveState();
