@@ -319,6 +319,13 @@ function normalizeState(nextState) {
     repeatTransactionReceiptNumber: nextState.repeatTransactionReceiptNumber || "",
     repeatTransactionReceiptGroupId: nextState.repeatTransactionReceiptGroupId || "",
     transactionTab: nextState.transactionTab || "walk_in",
+    deliveries: (nextState.deliveries || []).map((delivery) => ({
+      ...delivery,
+      lines: deliveryLines(delivery).map((line) => ({
+        ...line,
+        actualSoldCost: Number(line.actualSoldCost || 0),
+      })),
+    })),
     transactions: (nextState.transactions || []).map((transaction) => {
       const receiptNumber = transaction.receiptNumber || "";
       const receiptKey = `${transaction.date || ""}|${receiptNumber.trim().toLowerCase()}`;
@@ -420,6 +427,10 @@ function deliveryLineEstimatedValue(line) {
   return Number(line.loadedWeight || 0) * materialPrice(line.materialId, "sellPrice");
 }
 
+function deliveryLineActualSoldCost(line) {
+  return Number(line.actualSoldCost || 0);
+}
+
 function deliveryLineDiscrepancy(line) {
   return Number(line.deliveredWeight || 0) - Number(line.loadedWeight || 0);
 }
@@ -454,8 +465,9 @@ function deliveryLoadTotals(lines) {
     deliveredWeight: totals.deliveredWeight + Number(line.deliveredWeight || 0),
     discrepancyWeight: totals.discrepancyWeight + deliveryLineDiscrepancy(line),
     estimatedValue: totals.estimatedValue + deliveryLineEstimatedValue(line),
+    actualSoldCost: totals.actualSoldCost + deliveryLineActualSoldCost(line),
     calculatedLoss: totals.calculatedLoss + deliveryLineCalculatedLoss(line),
-  }), { loadedWeight: 0, deliveredWeight: 0, discrepancyWeight: 0, estimatedValue: 0, calculatedLoss: 0 });
+  }), { loadedWeight: 0, deliveredWeight: 0, discrepancyWeight: 0, estimatedValue: 0, actualSoldCost: 0, calculatedLoss: 0 });
 }
 
 function partyName(partyId) {
@@ -1497,10 +1509,10 @@ function deliveryReceiptHtml(delivery) {
           <div class="row"><span>Status</span><strong>${escapeHtml(delivery.status)}</strong></div>
           <div class="line"></div>
           <table>
-            <thead><tr><th>Material</th><th>Loaded</th><th>Delivered</th><th>Gap</th><th>Loss</th><th>Value</th></tr></thead>
+            <thead><tr><th>Material</th><th>Loaded</th><th>Delivered</th><th>Gap</th><th>Loss</th><th>Estimated</th><th>Actual sold</th></tr></thead>
             <tbody>
               ${lines.map((line) => `
-                <tr><td>${escapeHtml(materialName(line.materialId))}</td><td>${kg(line.loadedWeight)}</td><td>${kg(line.deliveredWeight)}</td><td>${deliveryDiscrepancyDisplay(delivery, line)}</td><td>${deliveryCalculatedLossDisplay(delivery, line)}</td><td>${money(deliveryLineEstimatedValue(line))}</td></tr>
+                <tr><td>${escapeHtml(materialName(line.materialId))}</td><td>${kg(line.loadedWeight)}</td><td>${kg(line.deliveredWeight)}</td><td>${deliveryDiscrepancyDisplay(delivery, line)}</td><td>${deliveryCalculatedLossDisplay(delivery, line)}</td><td>${money(deliveryLineEstimatedValue(line))}</td><td>${money(deliveryLineActualSoldCost(line))}</td></tr>
               `).join("")}
             </tbody>
           </table>
@@ -1510,6 +1522,7 @@ function deliveryReceiptHtml(delivery) {
           <div class="row"><span>Discrepancy</span><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></div>
           <div class="row"><span>Calculated loss</span><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></div>
           <div class="row"><span>Estimated value</span><strong>${money(totals.estimatedValue)}</strong></div>
+          <div class="row"><span>Actual sold</span><strong>${money(totals.actualSoldCost)}</strong></div>
           ${delivery.notes ? `<div class="line"></div><div class="muted">Notes: ${escapeHtml(delivery.notes)}</div>` : ""}
           <div class="line"></div>
           ${barcode(delivery.number)}
@@ -2115,9 +2128,9 @@ function deliveryRecordGroups(deliveries) {
             <button class="btn secondary" data-print-delivery="${delivery.id}">Print</button>
           </div>
         </div>
-        ${table(["Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Status"], [
-          ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td class="num">${deliveryDiscrepancyDisplay(delivery, line)}</td><td class="amount">${deliveryCalculatedLossDisplay(delivery, line)}</td><td class="amount">${money(deliveryLineEstimatedValue(line))}</td><td>${badge(delivery.status)}</td></tr>`),
-          `<tr><td><strong>Truck load total</strong></td><td class="num"><strong>${kg(totals.loadedWeight)}</strong></td><td class="num"><strong>${kg(totals.deliveredWeight)}</strong></td><td class="num"><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${money(totals.estimatedValue)}</strong></td><td></td></tr>`,
+        ${table(["Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Actual Sold Cost", "Status"], [
+          ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td class="num">${deliveryDiscrepancyDisplay(delivery, line)}</td><td class="amount">${deliveryCalculatedLossDisplay(delivery, line)}</td><td class="amount">${money(deliveryLineEstimatedValue(line))}</td><td class="amount">${money(deliveryLineActualSoldCost(line))}</td><td>${badge(delivery.status)}</td></tr>`),
+          `<tr><td><strong>Truck load total</strong></td><td class="num"><strong>${kg(totals.loadedWeight)}</strong></td><td class="num"><strong>${kg(totals.deliveredWeight)}</strong></td><td class="num"><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${money(totals.estimatedValue)}</strong></td><td class="amount"><strong>${money(totals.actualSoldCost)}</strong></td><td></td></tr>`,
         ])}
       </section>
     `;
@@ -2148,7 +2161,7 @@ function deliveryForm(delivery = null) {
       </div>
       <div class="panel-head" style="margin-top:14px"><h3>${delivery ? "Truck load scraps" : "Single scrap material"}</h3></div>
       ${deliveryLineInputs(delivery)}
-      <div class="notice" data-delivery-summary style="margin-top:12px">Truck load total: 0 kg | Delivered: 0 kg | Estimated value: PHP 0.00</div>
+      <div class="notice" data-delivery-summary style="margin-top:12px">Truck load total: 0 kg | Delivered: 0 kg | Estimated value: PHP 0.00 | Actual sold: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${source?.notes || ""}</textarea></label>
       ${delivery ? "" : `<label class="check-row"><input type="checkbox" name="keepSameTruck" value="yes" ${repeatDelivery ? "checked" : ""}> Process another scrap material with the same truck</label>`}
       <button class="btn" type="submit" style="margin-top:12px">${delivery ? "Save changes" : repeatDelivery ? "Add scrap load" : "Save delivery"}</button>
@@ -2159,7 +2172,7 @@ function deliveryForm(delivery = null) {
 function deliveryLines(delivery) {
   if (Array.isArray(delivery.lines) && delivery.lines.length) return delivery.lines;
   if (!delivery.materialId) return [];
-  return [{ materialId: delivery.materialId, loadedWeight: Number(delivery.loadedWeight || 0), deliveredWeight: Number(delivery.deliveredWeight || 0) }];
+  return [{ materialId: delivery.materialId, loadedWeight: Number(delivery.loadedWeight || 0), deliveredWeight: Number(delivery.deliveredWeight || 0), actualSoldCost: Number(delivery.actualSoldCost || 0) }];
 }
 
 function deliveryFormLines(data) {
@@ -2172,6 +2185,7 @@ function deliveryFormLines(data) {
     materialId: data[`materialId${lineNo}`],
     loadedWeight: Number(data[`loadedWeight${lineNo}`] || 0),
     deliveredWeight: Number(data[`deliveredWeight${lineNo}`] || 0),
+    actualSoldCost: Number(data[`actualSoldCost${lineNo}`] || 0),
   })).filter((line) => line.materialId && line.loadedWeight > 0);
 }
 
@@ -2192,11 +2206,13 @@ function deliveryRecordRows() {
       discrepancyKg: deliveryIsCompleted(delivery) ? deliveryLineDiscrepancy(line) : "",
       calculatedLoss: deliveryIsCompleted(delivery) ? deliveryLineCalculatedLoss(line) : "",
       estimatedValue: deliveryLineEstimatedValue(line),
+      actualSoldCost: deliveryLineActualSoldCost(line),
       totalTruckLoadedKg: totals.loadedWeight,
       totalTruckDeliveredKg: totals.deliveredWeight,
       totalTruckDiscrepancyKg: deliveryIsCompleted(delivery) ? totals.discrepancyWeight : "",
       totalTruckCalculatedLoss: deliveryIsCompleted(delivery) ? totals.calculatedLoss : "",
       totalTruckEstimatedValue: totals.estimatedValue,
+      totalTruckActualSoldCost: totals.actualSoldCost,
       status: delivery.status,
       notes: delivery.notes || "",
     }));
@@ -2214,6 +2230,9 @@ function deliveryLineInputs(delivery = null) {
       </label>
       <label>Delivered weight ${lineNo}
         <input name="deliveredWeight${lineNo}" type="number" value="${lines[lineNo - 1]?.deliveredWeight ?? ""}" step="0.01" min="0" data-delivered-weight-line="${lineNo}">
+      </label>
+      <label>Actual sold cost ${lineNo}
+        <input name="actualSoldCost${lineNo}" type="number" value="${lines[lineNo - 1]?.actualSoldCost ?? ""}" step="0.01" min="0" data-actual-sold-cost-line="${lineNo}">
       </label>
     </div>
   `).join("");
@@ -3593,6 +3612,7 @@ function updateDeliveryStockLimits(form, showAlert = false) {
       materialId: form.elements.namedItem(`materialId${lineNo}`)?.value,
       loadedWeight: Number(field.value || 0),
       deliveredWeight: Number(form.elements.namedItem(`deliveredWeight${lineNo}`)?.value || 0),
+      actualSoldCost: Number(form.elements.namedItem(`actualSoldCost${lineNo}`)?.value || 0),
     };
   });
   const totalsByMaterial = loadedFields.reduce((totals, field) => {
@@ -3625,7 +3645,7 @@ function updateDeliveryStockLimits(form, showAlert = false) {
   });
   const summary = form.querySelector("[data-delivery-summary]");
   if (summary) {
-    summary.textContent = `Truck load total: ${kg(truckTotals.loadedWeight)} | Delivered: ${kg(truckTotals.deliveredWeight)} | Estimated value: ${money(truckTotals.estimatedValue)}`;
+    summary.textContent = `Truck load total: ${kg(truckTotals.loadedWeight)} | Delivered: ${kg(truckTotals.deliveredWeight)} | Estimated value: ${money(truckTotals.estimatedValue)} | Actual sold: ${money(truckTotals.actualSoldCost)}`;
   }
   if (firstShortage && showAlert) {
     alert(`Delivery blocked: ${materialName(firstShortage.materialId)} loaded weight exceeds inventory.\n\nAvailable stock: ${kg(firstShortage.availableStock)}\nLoaded weight: ${kg(firstShortage.loadedWeight)}`);
@@ -4508,7 +4528,7 @@ function exportExcel(type) {
 function excelWorkbook(sheetName, rows) {
   const defaultHeaders = {
     inventory: ["material", "category", "unit", "currentStockKg", "buyingPricePerKilo", "sellingPricePerKilo", "estimatedValue", "location"],
-    deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "discrepancyKg", "calculatedLoss", "estimatedValue", "totalTruckLoadedKg", "totalTruckDeliveredKg", "totalTruckDiscrepancyKg", "totalTruckCalculatedLoss", "totalTruckEstimatedValue", "status", "notes"],
+    deliveries: ["deliveryNumber", "date", "destination", "truck", "driver", "operator", "material", "loadedWeightKg", "deliveredWeightKg", "discrepancyKg", "calculatedLoss", "estimatedValue", "actualSoldCost", "totalTruckLoadedKg", "totalTruckDeliveredKg", "totalTruckDiscrepancyKg", "totalTruckCalculatedLoss", "totalTruckEstimatedValue", "totalTruckActualSoldCost", "status", "notes"],
     "review-attendance": ["date", "employee", "branch", "timeIn", "timeOut", "regularHours", "overtimeHours", "status", "notes"],
   };
   const headers = rows.length ? Object.keys(rows[0]) : defaultHeaders[sheetName] || [];
