@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ScrapWise User Manual</title>
+    <style>
+      :root {
+        --ink: #142230;
+        --muted: #52657a;
+        --line: #d7e1e8;
+        --soft: #f3f8f5;
+        --green: #16834f;
+        --navy: #123862;
+        --orange: #d65f08;
+        --danger: #b91c1c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #eef6f1;
+        color: var(--ink);
+        font-family: Arial, Helvetica, sans-serif;
+        line-height: 1.55;
+      }
+
+      .manual {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .cover {
+        padding: 36px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--green), #247fad 78%);
+        color: #fff;
+        box-shadow: 0 18px 42px rgba(18, 56, 98, 0.18);
+      }
+
+      .cover h1 {
+        margin: 0 0 10px;
+        font-size: 42px;
+      }
+
+      .cover p {
+        max-width: 720px;
+        margin: 0;
+        font-size: 18px;
+        opacity: 0.95;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        font-weight: 700;
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: 0 10px 24px rgba(18, 56, 98, 0.08);
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        color: var(--navy);
+        font-size: 26px;
+      }
+
+      h3 {
+        margin: 22px 0 8px;
+        color: var(--ink);
+        font-size: 19px;
+      }
+
+      p {
+        margin: 0 0 10px;
+      }
+
+      ul,
+      ol {
+        margin: 8px 0 0;
+        padding-left: 22px;
+      }
+
+      li {
+        margin: 5px 0;
+      }
+
+      a {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .toc {
+        columns: 2;
+        column-gap: 34px;
+      }
+
+      .toc a {
+        display: block;
+        break-inside: avoid;
+        margin: 0 0 8px;
+        text-decoration: none;
+      }
+
+      .note {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-left: 4px solid var(--green);
+        border-radius: 6px;
+        background: var(--soft);
+      }
+
+      .warning {
+        border-left-color: var(--orange);
+        background: #fff7ed;
+      }
+
+      .danger {
+        border-left-color: var(--danger);
+        background: #fff1f2;
+      }
+
+      .steps {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .step {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfdfe;
+      }
+
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--green);
+      }
+
+      table {
+        width: 100%;
+        margin-top: 12px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #edf3f5;
+        color: #35485a;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .status {
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-weight: 800;
+      }
+
+      .active { background: #dbeafe; color: #1d4ed8; }
+      .completed { background: #dcfce7; color: #166534; }
+      .pending { background: #ffedd5; color: #c2410c; }
+      .draft { background: #f3e8ff; color: #6b21a8; }
+      .unpaid { background: #fee2e2; color: #991b1b; }
+      .closed { background: #e0e7ff; color: #3730a3; }
+
+      .checklist {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 12px;
+      }
+
+      .checklist div {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfdfe;
+      }
+
+      .page-break {
+        break-before: page;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .manual {
+          max-width: none;
+          padding: 0;
+        }
+
+        .section,
+        .cover {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+
+        a {
+          color: var(--ink);
+          text-decoration: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="manual">
+      <section class="cover">
+        <h1>ScrapWise User Manual</h1>
+        <p>Turn every kilo into clear business insight. This guide explains how to use ScrapWise for daily junkshop operations in simple, non-technical steps.</p>
+        <div class="meta">
+          <span class="pill">For cashiers, staff, payroll, and admin users</span>
+          <span class="pill">Printable guide</span>
+          <span class="pill">Updated July 31, 2026</span>
+        </div>
+      </section>
+
+      <section class="section" id="contents">
+        <h2>Contents</h2>
+        <div class="toc">
+          <a href="#about">1. What ScrapWise Is For</a>
+          <a href="#login">2. Login, Logout, and Language</a>
+          <a href="#navigation">3. Navigation and Common Buttons</a>
+          <a href="#dashboard">4. Dashboard</a>
+          <a href="#attendance">5. Attendance</a>
+          <a href="#review-attendance">6. Review Attendance</a>
+          <a href="#cash-operation">7. Cash Operation</a>
+          <a href="#transactions">8. Transactions</a>
+          <a href="#inventory">9. Inventory</a>
+          <a href="#deliveries">10. Deliveries</a>
+          <a href="#customers">11. Customers and Suppliers</a>
+          <a href="#maintenance">12. Maintenance Pages</a>
+          <a href="#employees">13. Employee Maintenance</a>
+          <a href="#payroll">14. Payroll</a>
+          <a href="#reports">15. Reports</a>
+          <a href="#users">16. Users</a>
+          <a href="#daily-flow">17. Suggested Daily Process</a>
+          <a href="#tips">18. Tips and Common Reminders</a>
+        </div>
+      </section>
+
+      <section class="section" id="about">
+        <h2>1. What ScrapWise Is For</h2>
+        <p>ScrapWise is used to manage junkshop operations in one place. It helps the team record purchases, sales, inventory, truck deliveries, cash operation, attendance, payroll, and reports.</p>
+        <p>The system is designed for multiple branches. Admin users can see and manage more areas. Staff users usually work with daily transactions, inventory, deliveries, and attendance. Payroll users work with employees, cash advances, and payroll.</p>
+        <div class="note">
+          <strong>Important:</strong> Always choose the correct branch, date, material, customer, supplier, and employee before saving a record.
+        </div>
+      </section>
+
+      <section class="section" id="login">
+        <h2>2. Login, Logout, and Language</h2>
+        <div class="steps">
+          <div class="step">
+            <strong>Login</strong>
+            Open ScrapWise, enter your email or username, enter your password, then click <b>Sign in</b>. The system will open the correct access based on your user role.
+          </div>
+          <div class="step">
+            <strong>Logout</strong>
+            Click <b>Log out</b> at the bottom of the sidebar when you are done.
+          </div>
+          <div class="step">
+            <strong>Language</strong>
+            Use the <b>EN</b> and <b>FIL</b> buttons in the sidebar to switch between English and Filipino where available.
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="navigation">
+        <h2>3. Navigation and Common Buttons</h2>
+        <p>The left sidebar contains the main pages. Click a page name to open it. Some pages use colored tabs. The tabs are clickable and show different sections inside the same page.</p>
+        <table>
+          <thead>
+            <tr><th>Button or Area</th><th>What It Does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><b>Save</b></td><td>Saves a new record.</td></tr>
+            <tr><td><b>Save changes</b></td><td>Updates an existing record after editing.</td></tr>
+            <tr><td><b>Edit</b></td><td>Loads a saved record back into the form so you can correct it.</td></tr>
+            <tr><td><b>Delete</b></td><td>Removes a record. Use this carefully.</td></tr>
+            <tr><td><b>Print</b></td><td>Opens a printable receipt, payslip, or delivery record.</td></tr>
+            <tr><td><b>Download Excel / Export CSV</b></td><td>Downloads records for reporting or spreadsheet use.</td></tr>
+            <tr><td><b>Reset demo data</b></td><td>Returns the sample data to the starting state. Do not use this during real operations.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Status Colors</h3>
+        <p>Status labels use different colors so users can quickly see what needs attention.</p>
+        <div class="status-grid">
+          <div class="status active">Active / On duty</div>
+          <div class="status completed">Completed</div>
+          <div class="status pending">Pending / In transit</div>
+          <div class="status draft">Draft</div>
+          <div class="status unpaid">Unpaid / Cancelled</div>
+          <div class="status closed">Closed</div>
+        </div>
+      </section>
+
+      <section class="section page-break" id="dashboard">
+        <h2>4. Dashboard</h2>
+        <p>The dashboard is the first summary page after login. It shows a quick view of the business.</p>
+        <ul>
+          <li><b>Purchases</b> shows the total value and weight bought.</li>
+          <li><b>Sales</b> shows the total value and weight sold.</li>
+          <li><b>Gross profit</b> shows the estimated income view.</li>
+          <li><b>Inventory value</b> shows the current estimated stock value.</li>
+          <li><b>Pending payments</b> shows open balances that still need collection or payment.</li>
+        </ul>
+        <div class="note">Use the dashboard to check the overall condition of the shop before looking at detailed records.</div>
+      </section>
+
+      <section class="section" id="attendance">
+        <h2>5. Attendance</h2>
+        <p>Use Attendance to add employee time in and time out. The employee list is based on the selected branch.</p>
+        <ol>
+          <li>Select the <b>Date</b>.</li>
+          <li>Select the <b>Branch</b>.</li>
+          <li>Select the <b>Employee</b>.</li>
+          <li>Enter <b>Time in</b>.</li>
+          <li>Enter <b>Time out</b> when the employee finishes duty.</li>
+          <li>Select the status: <b>On duty</b> or <b>Completed</b>.</li>
+          <li>Add notes if needed, then click <b>Save attendance</b> or <b>Save changes</b>.</li>
+        </ol>
+        <h3>Cash Advance Before Time Out</h3>
+        <p>If an employee asks for a cash advance during the day, use the cash advance area in Attendance. Enter employee, date, amount, reason, and status, then save.</p>
+        <div class="note">Completed attendance is used later in Payroll to calculate regular hours and overtime hours.</div>
+      </section>
+
+      <section class="section" id="review-attendance">
+        <h2>6. Review Attendance</h2>
+        <p>Use Review Attendance to see who was on duty for a selected branch and date range.</p>
+        <ul>
+          <li>Select <b>All branches</b> or one branch.</li>
+          <li>Select <b>Date from</b> and <b>Date to</b>.</li>
+          <li>Review employee, branch, date, time in, time out, regular hours, overtime hours, status, and notes.</li>
+          <li>Click <b>Edit</b> if a time in or time out needs correction.</li>
+          <li>Click <b>Download Excel</b> to export attendance records.</li>
+        </ul>
+      </section>
+
+      <section class="section page-break" id="cash-operation">
+        <h2>7. Cash Operation</h2>
+        <p>Cash Operation is used to open the daily operating fund, record added or removed cash, close the operation, and print the cash receipt.</p>
+        <h3>Starting Amount</h3>
+        <ol>
+          <li>Open the <b>Starting amount</b> tab.</li>
+          <li>Select the operation date and branch.</li>
+          <li>Enter the starting cash amount.</li>
+          <li>Add opening notes if needed.</li>
+          <li>Click <b>Open operation</b>.</li>
+        </ol>
+        <h3>Paid In</h3>
+        <p>Use <b>Paid in</b> when adding cash to the fund. Example: additional fund from owner.</p>
+        <h3>Paid Out</h3>
+        <p>Use <b>Paid out</b> when removing cash for expenses. Example: transportation or supplies.</p>
+        <h3>Close Operation</h3>
+        <ol>
+          <li>Return to <b>Starting amount</b>.</li>
+          <li>Review starting cash, cash payments, purchases, paid in, paid out, and expected cash.</li>
+          <li>Enter the actual cash counted in <b>Close cash</b>.</li>
+          <li>Click <b>Close operation</b>.</li>
+          <li>Confirm the closing message.</li>
+          <li>Print the receipt if needed.</li>
+        </ol>
+        <div class="warning">After closing, the record is saved in Operational history and the cash operation area is ready for the next operation.</div>
+      </section>
+
+      <section class="section" id="transactions">
+        <h2>8. Transactions</h2>
+        <p>Use Transactions to record buying scrap from suppliers and selling scrap to customers.</p>
+        <h3>New Transaction</h3>
+        <ol>
+          <li>Select the date and branch.</li>
+          <li>Select <b>Purchase</b> or <b>Sale</b>.</li>
+          <li>Select the customer or supplier.</li>
+          <li>Select the scrap material.</li>
+          <li>Enter weight in kilos. The weight must be greater than zero.</li>
+          <li>Enter price per kilo.</li>
+          <li>If the agreed price is different for this seller, enter <b>Price per demand</b>.</li>
+          <li>Select payment status: Paid, Unpaid, or Partial.</li>
+          <li>Review total and balance, then click <b>Save transaction</b>.</li>
+        </ol>
+        <h3>Same Customer, Multiple Materials</h3>
+        <p>If the same customer or supplier has another material, check <b>Process another transaction with the same customer</b>. After saving, the form keeps the same customer so you can add the next item faster.</p>
+        <h3>Edit, Delete, and Print</h3>
+        <ul>
+          <li>Click <b>Edit</b> to correct a saved transaction.</li>
+          <li>If you edit and change the date, the system may use <b>Save as</b> so the old record stays safe and a new dated record is created.</li>
+          <li>Click <b>Delete</b> to remove a wrong transaction.</li>
+          <li>Click <b>Print</b> for an individual transaction receipt.</li>
+          <li>Click <b>Print customer receipt</b> to print all transactions for one customer or supplier.</li>
+        </ul>
+      </section>
+
+      <section class="section page-break" id="inventory">
+        <h2>9. Inventory</h2>
+        <p>Inventory shows current stock based on all stock movement records. Purchases add stock. Sales and deliveries reduce stock.</p>
+        <h3>Stock Position</h3>
+        <p>Shows material, current stock, estimated value, and location. Use the material and location filters to focus the list.</p>
+        <h3>Stock Movements</h3>
+        <p>Shows every stock movement, including truck plate number, driver, delivery status, and notes when related to a delivery.</p>
+        <h3>List of Materials</h3>
+        <p>Shows material stock by location and groups related transactions by day.</p>
+        <h3>Downloads and Adjustments</h3>
+        <ul>
+          <li>Click <b>Download Excel</b> to export inventory.</li>
+          <li>Admin users can use <b>Manual adjustment</b> to correct stock, with a reason.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="deliveries">
+        <h2>10. Deliveries</h2>
+        <p>Use Deliveries when scrap is loaded into a truck and moved or sold to another destination.</p>
+        <h3>New Delivery</h3>
+        <ol>
+          <li>Select the date and source branch.</li>
+          <li>Select the destination from the dropdown list.</li>
+          <li>Enter truck plate number and driver name.</li>
+          <li>Select status: Pending, In transit, Completed, or Cancelled.</li>
+          <li>Select scrap material.</li>
+          <li>Enter loaded weight. The system should not allow a load greater than available inventory.</li>
+          <li>Enter delivered weight when the delivery is completed.</li>
+          <li>Save the delivery.</li>
+        </ol>
+        <h3>Same Truck, Multiple Scrap Loads</h3>
+        <p>If the same truck carries another scrap material, check <b>Process another scrap material with the same truck</b>. This helps the user add, add, add without repeating truck details.</p>
+        <h3>Delivery Records</h3>
+        <ul>
+          <li>Use filters for status, driver, plate number, and location.</li>
+          <li>Click <b>Edit</b> to correct a delivery.</li>
+          <li>Click <b>Print</b> to print the delivery record. The operator name appears on the printout.</li>
+          <li>Click <b>Download Excel</b> to export delivery records.</li>
+          <li>Completed deliveries show discrepancy and calculated loss.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="customers">
+        <h2>11. Customers and Suppliers</h2>
+        <p>Use Customers/Suppliers to maintain the names used in transactions.</p>
+        <ul>
+          <li>Select whether the contact is a customer or supplier.</li>
+          <li>Enter name.</li>
+          <li>Contact number, address, and notes are optional.</li>
+          <li>Click <b>Save</b>.</li>
+          <li>Click <b>Edit</b> beside a saved record to update it.</li>
+        </ul>
+      </section>
+
+      <section class="section page-break" id="maintenance">
+        <h2>12. Maintenance Pages</h2>
+        <h3>Materials/Prices</h3>
+        <p>Admin users maintain material names, categories, buying prices, selling prices, unit, and status. Transactions keep the price used at the time, so old records remain correct even if the price list changes later.</p>
+        <h3>Location Maintenance</h3>
+        <p>Admin users maintain branch or location records. Contact number is optional. This page supports multiple branches.</p>
+        <h3>Destination Maintenance</h3>
+        <p>Admin users maintain delivery destinations such as buyers, warehouses, processors, or other delivery contacts. These destinations appear in the delivery dropdown list.</p>
+      </section>
+
+      <section class="section" id="employees">
+        <h2>13. Employee Maintenance</h2>
+        <p>Use Employee Maintenance to maintain employee payroll information.</p>
+        <ul>
+          <li>Employee name</li>
+          <li>Branch</li>
+          <li>Position</li>
+          <li>Salary type: daily or monthly</li>
+          <li>Rate</li>
+          <li>SSS number</li>
+          <li>Pag-IBIG number</li>
+          <li>Other benefits</li>
+          <li>Start date</li>
+          <li>Status</li>
+        </ul>
+        <p>The employee record connects to Attendance and Payroll.</p>
+      </section>
+
+      <section class="section" id="payroll">
+        <h2>14. Payroll</h2>
+        <p>Payroll calculates employee income, deductions, cash advance deductions, and net pay.</p>
+        <h3>New Payslip</h3>
+        <ol>
+          <li>Select payroll period from and to.</li>
+          <li>Select pay date.</li>
+          <li>Select employee.</li>
+          <li>The system uses employee rate and attendance records to help calculate basic salary and overtime.</li>
+          <li>Enter other income and deduction amounts if needed.</li>
+          <li>Review Gross Pay, Deductions, and Net Pay.</li>
+          <li>Click <b>Calculate and save</b>.</li>
+        </ol>
+        <h3>Payroll Result Tabs</h3>
+        <table>
+          <thead>
+            <tr><th>Tab</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Payroll summary</td><td>Shows payslips. Use Edit to correct, Print payslip to print, and Download all payrolls for export.</td></tr>
+            <tr><td>Cash advance records</td><td>Shows cash advances. Use Edit to correct a cash advance.</td></tr>
+            <tr><td>Attendance payroll tracker</td><td>Shows attendance records used for regular and overtime hours.</td></tr>
+          </tbody>
+        </table>
+        <h3>New Cash Advance</h3>
+        <p>At the bottom of Payroll, add a cash advance by selecting employee, date, amount, reason, and status. The amount is included as a deduction when the payroll period includes that date.</p>
+      </section>
+
+      <section class="section page-break" id="reports">
+        <h2>15. Reports</h2>
+        <p>Reports allow users to filter records by date and branch, then view or export results.</p>
+        <ol>
+          <li>Select From date and To date.</li>
+          <li>Select branch or All branches.</li>
+          <li>Open the needed report tab.</li>
+          <li>Click Export CSV if available.</li>
+        </ol>
+        <table>
+          <thead>
+            <tr><th>Report Tab</th><th>What It Shows</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Summary</td><td>Total transactions, purchases, sales, pending balances, and profit view if allowed.</td></tr>
+            <tr><td>Purchases</td><td>Daily purchase report.</td></tr>
+            <tr><td>Sales</td><td>Daily sales report.</td></tr>
+            <tr><td>Inventory</td><td>Inventory report.</td></tr>
+            <tr><td>Income / Profit</td><td>Admin-only income and profit report.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="users">
+        <h2>16. Users</h2>
+        <p>Admin users can add, edit, and delete user accounts.</p>
+        <ul>
+          <li><b>Staff</b> can handle normal operations.</li>
+          <li><b>Payroll/Admin Staff</b> can access payroll and employee maintenance.</li>
+          <li><b>Admin</b> can access all admin maintenance pages and restricted reports.</li>
+        </ul>
+        <div class="warning">Only give admin access to trusted users.</div>
+      </section>
+
+      <section class="section" id="daily-flow">
+        <h2>17. Suggested Daily Process</h2>
+        <div class="checklist">
+          <div>
+            <h3>Before Opening</h3>
+            <ul>
+              <li>Login.</li>
+              <li>Open Cash Operation.</li>
+              <li>Enter starting amount.</li>
+              <li>Check the dashboard.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>During Operation</h3>
+            <ul>
+              <li>Record purchases and sales.</li>
+              <li>Use same customer checkbox for multiple materials.</li>
+              <li>Record paid in and paid out cash.</li>
+              <li>Add attendance and cash advances if needed.</li>
+              <li>Record deliveries when trucks are loaded.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Before Closing</h3>
+            <ul>
+              <li>Review transactions.</li>
+              <li>Check inventory.</li>
+              <li>Complete employee time out.</li>
+              <li>Close cash operation.</li>
+              <li>Print needed receipts and reports.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="tips">
+        <h2>18. Tips and Common Reminders</h2>
+        <ul>
+          <li>Do not save a transaction with zero or blank weight.</li>
+          <li>Use Edit when correcting a mistake instead of creating a duplicate.</li>
+          <li>For delivery, check available stock before saving loaded weight.</li>
+          <li>Use dropdown lists for branch, customer, supplier, material, and destination whenever available.</li>
+          <li>Close cash operation only after counting actual cash.</li>
+          <li>Cash advance deductions follow the payroll period date range.</li>
+          <li>Download Excel or CSV files before sharing reports outside the system.</li>
+          <li>Do not click Reset demo data during actual work.</li>
+        </ul>
+        <div class="danger">
+          <strong>Data reminder:</strong> This current app is a browser-based MVP. Make sure real production use has proper login security, database backup, and user access controls before using it for live business records.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
