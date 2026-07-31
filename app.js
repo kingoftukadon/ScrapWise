@@ -177,6 +177,7 @@ const seedState = {
   cashOperationTab: "starting",
   payrollTab: "summary",
   editingTransactionId: null,
+  editingReceiptGroupId: null,
   editingPartyId: null,
   editingDeliveryId: null,
   editingMaterialId: null,
@@ -189,6 +190,7 @@ const seedState = {
   editingCashAdvanceId: null,
   repeatTransactionPartyId: "",
   repeatTransactionReceiptNumber: "",
+  repeatTransactionReceiptGroupId: "",
   selectedTransactionPartyId: "",
   repeatDeliveryId: "",
   cashOperationDate: today(),
@@ -308,18 +310,30 @@ function loadState() {
 function normalizeState(nextState) {
   const parties = ensureWalkInParty(nextState.parties || []);
   const walkInPartyId = parties.find((party) => party.status === "active" && party.name?.trim().toLowerCase() === "walk in")?.id || "";
+  const receiptGroups = {};
   return {
     ...nextState,
     parties,
+    editingReceiptGroupId: nextState.editingReceiptGroupId || null,
     selectedTransactionPartyId: nextState.repeatTransactionPartyId ? nextState.selectedTransactionPartyId : walkInPartyId,
     repeatTransactionReceiptNumber: nextState.repeatTransactionReceiptNumber || "",
+    repeatTransactionReceiptGroupId: nextState.repeatTransactionReceiptGroupId || "",
     transactionTab: nextState.transactionTab || "walk_in",
-    transactions: (nextState.transactions || []).map((transaction) => ({
-      ...transaction,
-      basePrice: transaction.basePrice ?? transaction.price ?? 0,
-      demandPrice: transaction.demandPrice ?? "",
-      receiptNumber: transaction.receiptNumber || "",
-    })),
+    transactions: (nextState.transactions || []).map((transaction) => {
+      const receiptNumber = transaction.receiptNumber || "";
+      const receiptKey = `${transaction.date || ""}|${receiptNumber.trim().toLowerCase()}`;
+      const receiptGroupId = receiptKey
+        ? receiptGroups[receiptKey] || `${transaction.date || "no-date"}:${transaction.receiptGroupId || receiptNumber}`
+        : transaction.receiptGroupId || transaction.number;
+      if (receiptKey) receiptGroups[receiptKey] = receiptGroupId;
+      return {
+        ...transaction,
+        basePrice: transaction.basePrice ?? transaction.price ?? 0,
+        demandPrice: transaction.demandPrice ?? "",
+        receiptNumber,
+        receiptGroupId,
+      };
+    }),
   };
 }
 
@@ -1278,7 +1292,8 @@ function timeInputValue(value) {
 function printReceipt(transactionId) {
   const tx = state.transactions.find((item) => item.id === transactionId);
   if (!tx) return;
-  printTransactionReceipt([tx], tx.receiptNumber || tx.number);
+  const rows = tx.receiptGroupId ? branchFilter(state.transactions).filter((item) => item.receiptGroupId === tx.receiptGroupId) : [tx];
+  printTransactionReceipt(rows, tx.receiptNumber || tx.number);
 }
 
 function printCustomerReceipt(partyId) {
@@ -1725,12 +1740,15 @@ function barcode(value) {
 function transactionsView() {
   const transactions = branchFilter(state.transactions);
   const editingTransaction = transactions.find((tx) => tx.id === state.editingTransactionId) || null;
+  const editingReceiptRows = state.editingReceiptGroupId
+    ? transactions.filter((tx) => tx.receiptGroupId === state.editingReceiptGroupId)
+    : [];
   const activeTab = state.transactionTab || "walk_in";
   const walkInPartyId = defaultWalkInPartyId();
   const walkInTransactions = walkInPartyId ? transactions.filter((tx) => tx.partyId === walkInPartyId) : [];
   return page("Transactions", "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.", `
     <section class="grid">
-      ${transactionForm(editingTransaction)}
+      ${editingReceiptRows.length ? receiptEditForm(editingReceiptRows) : transactionForm(editingTransaction)}
       <div class="panel">
         <div class="panel-head"><h3>${activeTab === "walk_in" ? "Walk In transactions" : "Recent transactions"}</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
         <div class="tab-row">
@@ -1747,6 +1765,53 @@ function transactionTabButton(tab, label, activeTab) {
   return `<button class="${activeTab === tab ? "active" : ""}" data-transaction-tab="${tab}">${label}</button>`;
 }
 
+function receiptEditForm(rows) {
+  const first = rows[0];
+  const total = rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+  return `
+    <form class="panel" data-action="update-receipt-transactions" data-receipt-edit-form>
+      <div class="panel-head">
+        <h3>Edit receipt ${escapeHtml(first.receiptNumber || first.number)}</h3>
+        <button class="btn secondary" type="button" data-action="cancel-receipt-edit">Cancel edit</button>
+      </div>
+      <input type="hidden" name="receiptGroupId" value="${first.receiptGroupId || ""}">
+      <input type="hidden" name="lineCount" value="${rows.length}">
+      <div class="form-grid">
+        ${dateInput("date", first.date)}
+        ${branchSelect("branchId", "Branch", false, first.branchId)}
+        ${partySelect("partyId", first.partyId)}
+        ${input("receiptNumber", "Receipt number", "text", first.receiptNumber || "")}
+      </div>
+      <div class="notice" style="margin-top:12px">${rows.length} transaction${rows.length === 1 ? "" : "s"} in this receipt - Current total ${money(total)}</div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead><tr><th>No.</th><th>Type</th><th>Material</th><th>Weight</th><th>Price</th><th>Demand Price</th><th>Payment</th><th>Paid</th><th>Notes</th></tr></thead>
+          <tbody>
+            ${rows.map((tx, index) => receiptEditLine(tx, index)).join("")}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn" type="submit" style="margin-top:12px">Save receipt changes</button>
+    </form>
+  `;
+}
+
+function receiptEditLine(tx, index) {
+  return `
+    <tr>
+      <td>${escapeHtml(tx.number)}<input type="hidden" name="line${index}_id" value="${tx.id}"><input type="hidden" name="line${index}_number" value="${tx.number}"></td>
+      <td>${inlineSelect(`line${index}_type`, [["purchase", "Purchase"], ["sale", "Sale"]], tx.type)}</td>
+      <td>${inlineMaterialSelect(`line${index}_materialId`, tx.materialId)}</td>
+      <td><input name="line${index}_weight" type="number" value="${tx.weight}" step="0.01" min="0.01" required></td>
+      <td><input name="line${index}_price" type="number" value="${tx.basePrice ?? tx.price}" step="0.01" required></td>
+      <td><input name="line${index}_demandPrice" type="number" value="${tx.demandPrice ?? ""}" step="0.01"></td>
+      <td>${inlineSelect(`line${index}_paymentStatus`, [["paid", "Paid"], ["unpaid", "Unpaid"], ["partial", "Partial"]], tx.paymentStatus)}</td>
+      <td><input name="line${index}_paid" type="number" value="${tx.paid ?? 0}" step="0.01"></td>
+      <td><textarea name="line${index}_notes">${escapeHtml(tx.notes || "")}</textarea></td>
+    </tr>
+  `;
+}
+
 function transactionForm(tx = null) {
   const action = tx ? "update-transaction" : "add-transaction";
   const selectedPartyId = tx?.partyId || state.repeatTransactionPartyId || state.selectedTransactionPartyId || defaultWalkInPartyId();
@@ -1758,13 +1823,13 @@ function transactionForm(tx = null) {
         <h3>${tx ? `Edit ${tx.number}` : "New transaction"}</h3>
         ${tx ? `<button class="btn secondary" type="button" data-action="cancel-transaction-edit">Cancel edit</button>` : ""}
       </div>
-      ${tx ? `<input type="hidden" name="id" value="${tx.id}"><input type="hidden" name="originalDate" value="${originalDate}">` : ""}
+      ${tx ? `<input type="hidden" name="id" value="${tx.id}"><input type="hidden" name="originalDate" value="${originalDate}"><input type="hidden" name="receiptGroupId" value="${tx.receiptGroupId || ""}">` : ""}
       <div class="form-grid">
         ${dateInput("date", tx?.date || today())}
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
         ${partySelect("partyId", selectedPartyId)}
-        ${optionalInput("receiptNumber", "Receipt number", "text", receiptNumber)}
+        ${input("receiptNumber", "Receipt number", "text", receiptNumber)}
         ${materialSelect("materialId", tx?.materialId)}
         <label>${t("Weight in kilos")}<input name="weight" type="number" value="${tx?.weight ?? ""}" step="0.01" min="0.01" required></label>
         ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
@@ -1799,26 +1864,50 @@ function selectedPartyTransactionHistory(partyId) {
 }
 
 function customerTransactionGroups(transactions) {
-  const groups = transactions.slice().reverse().reduce((items, tx) => {
-    if (!items[tx.partyId]) items[tx.partyId] = [];
-    items[tx.partyId].push(tx);
+  const dateGroups = transactions.slice().reverse().reduce((items, tx) => {
+    if (!items[tx.date]) items[tx.date] = [];
+    items[tx.date].push(tx);
     return items;
   }, {});
-  const groupHtml = Object.entries(groups).map(([partyId, rows]) => {
-    const total = rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+  const groupHtml = Object.entries(dateGroups).map(([date, dateRows]) => {
+    const receiptGroups = dateRows.reduce((items, tx) => {
+      const receiptKey = tx.receiptGroupId || tx.receiptNumber || tx.number;
+      if (!items[receiptKey]) items[receiptKey] = [];
+      items[receiptKey].push(tx);
+      return items;
+    }, {});
     return `
       <section class="customer-group">
-        <div class="customer-head">
-          <div><h3>${escapeHtml(partyName(partyId))}</h3><small>${rows.length} transaction${rows.length === 1 ? "" : "s"} - ${money(total)}</small></div>
-          <button class="btn secondary" data-print-customer-receipt="${partyId}">Print customer receipt</button>
-        </div>
-        ${table(["Action", "No.", "Receipt No.", "Date", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
-        `))}
+        <div class="material-day-head"><strong>${escapeHtml(date)}</strong><span>${dateRows.length} transaction${dateRows.length === 1 ? "" : "s"}</span></div>
+        ${Object.entries(receiptGroups).map(([, rows]) => receiptTransactionGroup(rows)).join("")}
       </section>
     `;
   }).join("");
   return groupHtml || `<div class="notice">No transactions found.</div>`;
+}
+
+function receiptTransactionGroup(rows) {
+  const first = rows[0];
+  const total = rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
+  const paid = rows.reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
+  const balance = rows.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
+  return `
+    <section class="customer-group">
+      <div class="customer-head">
+        <div>
+          <h3>Receipt ${escapeHtml(first.receiptNumber || first.number)}</h3>
+          <small>${escapeHtml(partyName(first.partyId))} - ${rows.length} transaction${rows.length === 1 ? "" : "s"} - Total ${money(total)} - Paid ${money(paid)} - Balance ${money(balance)}</small>
+        </div>
+        <div>
+          <button class="btn secondary" data-edit-receipt="${first.receiptGroupId || first.receiptNumber || first.number}">Edit receipt</button>
+          <button class="btn secondary" data-print-receipt="${first.id}">Print receipt</button>
+        </div>
+      </div>
+      ${table(["Action", "No.", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
+        <tr class="${state.editingReceiptGroupId === tx.receiptGroupId ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-receipt="${tx.receiptGroupId || tx.receiptNumber || tx.number}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+      `))}
+    </section>
+  `;
 }
 
 function inventoryView() {
@@ -2826,6 +2915,10 @@ function select(name, options, selectedValue = "") {
   return `<label>${t(labelFromName(name))}<select name="${name}">${options.map(([value, text]) => `<option value="${value}" ${selectedValue === value ? "selected" : ""}>${t(text)}</option>`).join("")}</select></label>`;
 }
 
+function inlineSelect(name, options, selectedValue = "") {
+  return `<select name="${name}">${options.map(([value, text]) => `<option value="${value}" ${selectedValue === value ? "selected" : ""}>${t(text)}</option>`).join("")}</select>`;
+}
+
 function branchSelect(name, labelText = "Branch", includeBlank = false, selectedValue = "") {
   const branches = includeBlank ? state.branches.filter((branch) => branch.status === "active") : visibleBranches();
   const fallbackValue = includeBlank ? "" : selectedValue || defaultBranchId();
@@ -2858,6 +2951,10 @@ function destinationSelect(selectedValue = "") {
 function materialSelect(name, selectedValue = "", required = true) {
   const blank = required ? "" : `<option value="">No material</option>`;
   return `<label>Scrap material<select name="${name}" ${required ? "required" : ""}>${blank}${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select></label>`;
+}
+
+function inlineMaterialSelect(name, selectedValue = "") {
+  return `<select name="${name}" required>${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select>`;
 }
 
 function employeeSelect(name, selectedValue = "") {
@@ -2942,6 +3039,16 @@ function bindEvents() {
   document.querySelectorAll("[data-edit-transaction]").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingTransactionId = button.dataset.editTransaction;
+      state.editingReceiptGroupId = null;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-edit-receipt]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingReceiptGroupId = button.dataset.editReceipt;
+      state.editingTransactionId = null;
       saveState();
       render();
     });
@@ -2962,6 +3069,14 @@ function bindEvents() {
   document.querySelectorAll("[data-action='cancel-transaction-edit']").forEach((button) => {
     button.addEventListener("click", () => {
       state.editingTransactionId = null;
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='cancel-receipt-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingReceiptGroupId = null;
       saveState();
       render();
     });
@@ -3316,6 +3431,7 @@ function handleForm(action, data) {
     "add-cash-movement": addCashMovement,
     "add-transaction": addTransaction,
     "update-transaction": updateTransaction,
+    "update-receipt-transactions": updateReceiptTransactions,
     "add-adjustment": addAdjustment,
     "add-delivery": addDelivery,
     "update-delivery": updateDelivery,
@@ -3517,7 +3633,7 @@ function highlightPositiveNumberFields(scope = document) {
   });
 }
 
-function transactionValues(data, existingNumber = null) {
+function transactionValues(data, existingNumber = null, receiptGroupId = null) {
   const material = state.materials.find((item) => item.id === data.materialId);
   const weight = Number(data.weight);
   const basePrice = Number(data.price || (data.type === "sale" ? material.sellPrice : material.buyPrice));
@@ -3528,6 +3644,7 @@ function transactionValues(data, existingNumber = null) {
   return {
     number: existingNumber || `TRX-${String(state.transactions.length + 1).padStart(4, "0")}`,
     receiptNumber: data.receiptNumber?.trim() || "",
+    receiptGroupId,
     date: data.date,
     branchId: data.branchId,
     type: data.type,
@@ -3554,6 +3671,31 @@ function validTransactionWeight(data) {
   return true;
 }
 
+function validReceiptNumber(data, allowedReceiptGroupId = null, excludedTransactionId = null, enforceGroupDate = true) {
+  const receiptNumber = data.receiptNumber?.trim() || "";
+  if (!receiptNumber) {
+    alert("Transaction blocked: receipt number is required.");
+    return false;
+  }
+  if (enforceGroupDate && allowedReceiptGroupId) {
+    const mismatchedDate = state.transactions.find((tx) => tx.receiptGroupId === allowedReceiptGroupId && tx.date !== data.date);
+    if (mismatchedDate) {
+      alert(`Transaction blocked: receipt number ${receiptNumber} is already assigned to ${mismatchedDate.date}. Use that same date or enter a new receipt number.`);
+      return false;
+    }
+  }
+  const duplicate = state.transactions.find((tx) => {
+    if (excludedTransactionId && tx.id === excludedTransactionId) return false;
+    if ((tx.receiptNumber || "").trim().toLowerCase() !== receiptNumber.toLowerCase()) return false;
+    return !allowedReceiptGroupId || tx.receiptGroupId !== allowedReceiptGroupId;
+  });
+  if (duplicate) {
+    alert(`Transaction blocked: receipt number ${receiptNumber} is already used. Edit the existing receipt or continue the active receipt before starting a new one.`);
+    return false;
+  }
+  return true;
+}
+
 function autoStockMovement(tx) {
   return {
     id: id("s"),
@@ -3575,23 +3717,116 @@ function stockForEdit(branchId, materialId, transactionNumber = null) {
     .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 }
 
-function setRepeatTransactionState(data) {
+function stockForReceiptEdit(branchId, materialId, transactionNumbers = []) {
+  return state.stockMovements
+    .filter((movement) => !transactionNumbers.includes(movement.reference))
+    .filter((movement) => movement.branchId === branchId && movement.materialId === materialId)
+    .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+}
+
+function receiptGroupForTransaction(data, existingGroupId = null) {
+  const receiptNumber = data.receiptNumber?.trim() || "";
+  if (existingGroupId && state.transactions.some((tx) => tx.receiptGroupId === existingGroupId)) return existingGroupId;
+  if (data.keepSameCustomer === "yes" && state.repeatTransactionReceiptGroupId && state.repeatTransactionReceiptNumber.trim().toLowerCase() === receiptNumber.toLowerCase()) {
+    return state.repeatTransactionReceiptGroupId;
+  }
+  return id("rg");
+}
+
+function setRepeatTransactionState(data, receiptGroupId = "") {
   const repeat = data.keepSameCustomer === "yes";
   state.repeatTransactionPartyId = repeat ? data.partyId : "";
   state.repeatTransactionReceiptNumber = repeat ? data.receiptNumber?.trim() || "" : "";
+  state.repeatTransactionReceiptGroupId = repeat ? receiptGroupId : "";
   state.selectedTransactionPartyId = repeat ? data.partyId : defaultWalkInPartyId();
+}
+
+function syncReceiptGroupNumber(receiptGroupId, receiptNumber) {
+  if (!receiptGroupId || !receiptNumber) return;
+  state.transactions = state.transactions.map((tx) => (
+    tx.receiptGroupId === receiptGroupId ? { ...tx, receiptNumber } : tx
+  ));
 }
 
 function addTransaction(data) {
   if (!validTransactionWeight(data)) return;
-  const tx = transactionValues(data);
+  const receiptGroupId = receiptGroupForTransaction(data);
+  if (!validReceiptNumber(data, receiptGroupId)) return;
+  const tx = transactionValues(data, null, receiptGroupId);
   if (tx.type === "sale" && stockFor(tx.branchId, tx.materialId) < tx.weight && !isAdmin()) {
     alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
     return;
   }
   state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id });
   state.stockMovements.push(autoStockMovement(tx));
-  setRepeatTransactionState(data);
+  setRepeatTransactionState(data, tx.receiptGroupId);
+  saveState();
+  render();
+}
+
+function receiptLineData(data, index) {
+  return {
+    date: data.date,
+    branchId: data.branchId,
+    partyId: data.partyId,
+    receiptNumber: data.receiptNumber,
+    type: data[`line${index}_type`],
+    materialId: data[`line${index}_materialId`],
+    weight: data[`line${index}_weight`],
+    price: data[`line${index}_price`],
+    demandPrice: data[`line${index}_demandPrice`],
+    paymentStatus: data[`line${index}_paymentStatus`],
+    paid: data[`line${index}_paid`],
+    notes: data[`line${index}_notes`],
+  };
+}
+
+function validReceiptStock(rows, existingNumbers) {
+  const saleGroups = rows.reduce((groups, tx) => {
+    if (tx.type !== "sale") return groups;
+    const key = `${tx.branchId}|${tx.materialId}`;
+    groups[key] = (groups[key] || 0) + Number(tx.weight || 0);
+    return groups;
+  }, {});
+  const blocked = Object.entries(saleGroups).find(([key, weight]) => {
+    const [branchId, materialId] = key.split("|");
+    return stockForReceiptEdit(branchId, materialId, existingNumbers) < weight;
+  });
+  if (blocked && !isAdmin()) {
+    alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
+    return false;
+  }
+  return true;
+}
+
+function updateReceiptTransactions(data) {
+  const receiptGroupId = data.receiptGroupId;
+  const existingRows = state.transactions.filter((tx) => tx.receiptGroupId === receiptGroupId);
+  if (!receiptGroupId || !existingRows.length) return;
+  if (!validReceiptNumber(data, receiptGroupId, null, false)) return;
+
+  const lineCount = Number(data.lineCount || 0);
+  const nextRows = [];
+  for (let index = 0; index < lineCount; index += 1) {
+    const existing = existingRows.find((tx) => tx.id === data[`line${index}_id`]);
+    if (!existing) continue;
+    const lineData = receiptLineData(data, index);
+    if (!validTransactionWeight(lineData)) return;
+    const tx = transactionValues(lineData, existing.number, receiptGroupId);
+    nextRows.push({ ...existing, ...tx, updatedBy: currentUser().id });
+  }
+  if (nextRows.length !== existingRows.length) {
+    alert("Receipt update blocked: one or more receipt lines could not be found.");
+    return;
+  }
+  const existingNumbers = existingRows.map((tx) => tx.number);
+  if (!validReceiptStock(nextRows, existingNumbers)) return;
+
+  state.transactions = state.transactions.map((tx) => nextRows.find((row) => row.id === tx.id) || tx);
+  state.stockMovements = state.stockMovements.filter((movement) => !existingNumbers.includes(movement.reference));
+  state.stockMovements.push(...nextRows.map(autoStockMovement));
+  state.editingReceiptGroupId = null;
+  state.selectedTransactionPartyId = data.partyId;
   saveState();
   render();
 }
@@ -3697,9 +3932,12 @@ function updateTransaction(data) {
   const index = state.transactions.findIndex((tx) => tx.id === data.id);
   if (index === -1) return;
   const existing = state.transactions[index];
+  const existingReceiptGroupId = existing.receiptGroupId || data.receiptGroupId || existing.receiptNumber || existing.number;
   if (!validTransactionWeight(data)) return;
   if (data.originalDate && data.date !== data.originalDate) {
-    const tx = transactionValues(data);
+    const receiptGroupId = data.keepSameCustomer === "yes" ? receiptGroupForTransaction(data, existingReceiptGroupId) : receiptGroupForTransaction(data);
+    if (!validReceiptNumber(data, receiptGroupId)) return;
+    const tx = transactionValues(data, null, receiptGroupId);
     if (tx.type === "sale" && stockFor(tx.branchId, tx.materialId) < tx.weight && !isAdmin()) {
       alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
       return;
@@ -3707,21 +3945,24 @@ function updateTransaction(data) {
     state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id, sourceTransactionId: existing.id });
     state.stockMovements.push(autoStockMovement(tx));
     state.editingTransactionId = null;
-    setRepeatTransactionState(data);
+    setRepeatTransactionState(data, tx.receiptGroupId);
     saveState();
     render();
     return;
   }
-  const tx = transactionValues(data, existing.number);
+  const receiptGroupId = receiptGroupForTransaction(data, existingReceiptGroupId);
+  if (!validReceiptNumber(data, receiptGroupId, existing.id)) return;
+  const tx = transactionValues(data, existing.number, receiptGroupId);
   if (tx.type === "sale" && stockForEdit(tx.branchId, tx.materialId, existing.number) < tx.weight && !isAdmin()) {
     alert("Sale blocked: stock is lower than the requested sale weight. Ask admin to adjust or override.");
     return;
   }
   state.transactions[index] = { ...existing, ...tx };
+  syncReceiptGroupNumber(tx.receiptGroupId, tx.receiptNumber);
   state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== existing.number);
   state.stockMovements.push(autoStockMovement(tx));
   state.editingTransactionId = null;
-  setRepeatTransactionState(data);
+  setRepeatTransactionState(data, tx.receiptGroupId);
   saveState();
   render();
 }
@@ -3739,6 +3980,12 @@ function deleteTransaction(transactionId) {
   if (state.repeatTransactionPartyId === tx.partyId && !state.transactions.some((item) => item.partyId === tx.partyId)) {
     state.repeatTransactionPartyId = "";
     state.repeatTransactionReceiptNumber = "";
+    state.repeatTransactionReceiptGroupId = "";
+  }
+  if (state.repeatTransactionReceiptGroupId === tx.receiptGroupId && !state.transactions.some((item) => item.receiptGroupId === tx.receiptGroupId)) {
+    state.repeatTransactionPartyId = "";
+    state.repeatTransactionReceiptNumber = "";
+    state.repeatTransactionReceiptGroupId = "";
   }
   saveState();
   render();
