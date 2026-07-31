@@ -1788,6 +1788,7 @@ function receiptEditForm(rows) {
           <thead><tr><th>No.</th><th>Type</th><th>Material</th><th>Weight</th><th>Price</th><th>Demand Price</th><th>Payment</th><th>Paid</th><th>Notes</th></tr></thead>
           <tbody>
             ${rows.map((tx, index) => receiptEditLine(tx, index)).join("")}
+            ${receiptEditNewLine()}
           </tbody>
         </table>
       </div>
@@ -1808,6 +1809,22 @@ function receiptEditLine(tx, index) {
       <td>${inlineSelect(`line${index}_paymentStatus`, [["paid", "Paid"], ["unpaid", "Unpaid"], ["partial", "Partial"]], tx.paymentStatus)}</td>
       <td><input name="line${index}_paid" type="number" value="${tx.paid ?? 0}" step="0.01"></td>
       <td><textarea name="line${index}_notes">${escapeHtml(tx.notes || "")}</textarea></td>
+    </tr>
+  `;
+}
+
+function receiptEditNewLine() {
+  return `
+    <tr>
+      <td>New item</td>
+      <td>${inlineSelect("new_type", [["purchase", "Purchase"], ["sale", "Sale"]], "purchase")}</td>
+      <td>${inlineMaterialSelect("new_materialId", "")}</td>
+      <td><input name="new_weight" type="number" value="" step="0.01" min="0.01" placeholder="0.00"></td>
+      <td><input name="new_price" type="number" value="" step="0.01" placeholder="Auto"></td>
+      <td><input name="new_demandPrice" type="number" value="" step="0.01"></td>
+      <td>${inlineSelect("new_paymentStatus", [["paid", "Paid"], ["unpaid", "Unpaid"], ["partial", "Partial"]], "paid")}</td>
+      <td><input name="new_paid" type="number" value="" step="0.01"></td>
+      <td><textarea name="new_notes" placeholder="Optional"></textarea></td>
     </tr>
   `;
 }
@@ -3781,6 +3798,27 @@ function receiptLineData(data, index) {
   };
 }
 
+function receiptNewLineData(data) {
+  return {
+    date: data.date,
+    branchId: data.branchId,
+    partyId: data.partyId,
+    receiptNumber: data.receiptNumber,
+    type: data.new_type,
+    materialId: data.new_materialId,
+    weight: data.new_weight,
+    price: data.new_price,
+    demandPrice: data.new_demandPrice,
+    paymentStatus: data.new_paymentStatus,
+    paid: data.new_paid,
+    notes: data.new_notes,
+  };
+}
+
+function hasNewReceiptLine(data) {
+  return Boolean(data.new_weight && Number(data.new_weight) > 0);
+}
+
 function validReceiptStock(rows, existingNumbers) {
   const saleGroups = rows.reduce((groups, tx) => {
     if (tx.type !== "sale") return groups;
@@ -3819,12 +3857,21 @@ function updateReceiptTransactions(data) {
     alert("Receipt update blocked: one or more receipt lines could not be found.");
     return;
   }
+  const newRows = [];
+  if (hasNewReceiptLine(data)) {
+    const newLineData = receiptNewLineData(data);
+    if (!validTransactionWeight(newLineData)) return;
+    const tx = transactionValues(newLineData, null, receiptGroupId);
+    newRows.push({ id: id("t"), ...tx, createdBy: currentUser().id });
+  }
   const existingNumbers = existingRows.map((tx) => tx.number);
-  if (!validReceiptStock(nextRows, existingNumbers)) return;
+  const receiptRows = [...nextRows, ...newRows];
+  if (!validReceiptStock(receiptRows, existingNumbers)) return;
 
   state.transactions = state.transactions.map((tx) => nextRows.find((row) => row.id === tx.id) || tx);
+  state.transactions.push(...newRows);
   state.stockMovements = state.stockMovements.filter((movement) => !existingNumbers.includes(movement.reference));
-  state.stockMovements.push(...nextRows.map(autoStockMovement));
+  state.stockMovements.push(...receiptRows.map(autoStockMovement));
   state.editingReceiptGroupId = null;
   state.selectedTransactionPartyId = data.partyId;
   saveState();
