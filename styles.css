@@ -643,27 +643,51 @@ button {
 .tab-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin: 0 0 14px;
-  padding: 6px;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #eef5f2;
+  background: #f8fbfc;
+  box-shadow: inset 0 0 0 1px rgba(18, 56, 98, 0.04);
 }
 
 .tab-row button {
+  --tab-color: #123862;
   min-height: 38px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-radius: 6px;
-  background: transparent;
-  color: #405160;
+  background: var(--tab-color);
+  color: #ffffff;
   font-weight: 850;
+  box-shadow: 0 6px 14px rgba(18, 56, 98, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.tab-row button:nth-child(2),
+.tab-row button:nth-child(5) {
+  --tab-color: #d65f08;
+}
+
+.tab-row button:nth-child(3) {
+  --tab-color: #16834f;
+}
+
+.tab-row button:nth-child(4) {
+  --tab-color: #123862;
+}
+
+.tab-row button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
 }
 
 .tab-row button.active {
-  background: var(--accent);
+  background: var(--tab-color);
   color: #ffffff;
-  box-shadow: 0 8px 16px rgba(22, 131, 79, 0.18);
+  outline: 3px solid rgba(22, 131, 79, 0.22);
+  box-shadow: 0 10px 20px rgba(18, 56, 98, 0.2), inset 0 -4px 0 rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
 }
 
 .material-day-list {
@@ -1433,6 +1457,10 @@ button {
   gap: 10px;
 }
 
+.filter-grid {
+  margin-bottom: 14px;
+}
+
 label {
   display: grid;
   gap: 5px;
@@ -1613,6 +1641,138 @@ th {
 .badge.danger {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.badge.status-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge.status-completed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.status-on_duty {
+  background: #cffafe;
+  color: #0e7490;
+}
+
+.badge.status-paid {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.badge.status-partial {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.badge.status-unpaid {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge.status-pending {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.badge.status-in_transit {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge.status-cancelled {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+.badge.status-draft {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.badge.status-approved {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.badge.status-closed {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.badge.status-open {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.status-inactive {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.badge.status-fully_deducted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.status-purchase,
+.badge.status-purchase_in {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.status-sale,
+.badge.status-sale_out {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge.status-delivery_out {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.badge.status-delivery_in {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.badge.status-manual_adjustment {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.badge.status-daily {
+  background: #ecfccb;
+  color: #4d7c0f;
+}
+
+.badge.status-monthly {
+  background: #fae8ff;
+  color: #86198f;
+}
+
+.badge.status-supplier {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.status-customer {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge.status-buyer {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.badge.status-warehouse {
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .split {

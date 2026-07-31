@@ -172,7 +172,9 @@ const seedState = {
   reportTab: "summary",
   inventoryFilters: { materialId: "all", branchId: "all" },
   inventoryTab: "position",
+  deliveryFilters: { status: "all", driver: "all", truck: "all", sourceBranchId: "all" },
   cashOperationTab: "starting",
+  payrollTab: "summary",
   editingTransactionId: null,
   editingPartyId: null,
   editingDeliveryId: null,
@@ -183,6 +185,7 @@ const seedState = {
   editingAttendanceId: null,
   editingEmployeeId: null,
   editingPayrollId: null,
+  editingCashAdvanceId: null,
   repeatTransactionPartyId: "",
   selectedTransactionPartyId: "",
   repeatDeliveryId: "",
@@ -1895,16 +1898,61 @@ function adjustmentForm() {
 
 function deliveriesView() {
   const deliveries = state.deliveries.filter((delivery) => isAdmin() || delivery.sourceBranchId === defaultBranchId());
+  const filters = deliveryFilterValues();
+  const filteredDeliveries = filteredDeliveryRecords(deliveries, filters);
   const editingDelivery = deliveries.find((delivery) => delivery.id === state.editingDeliveryId) || null;
   return page("Deliveries", "Track truck loads, scrap materials, delivery destinations, and completion status.", `
     <section class="grid">
       ${deliveryForm(editingDelivery)}
       <div class="panel">
         <div class="panel-head"><h3>Delivery records</h3><button class="btn secondary" data-export-excel="deliveries">Download Excel</button></div>
-        ${deliveryRecordGroups(deliveries)}
+        ${deliveryFilterPanel(deliveries, filters)}
+        ${deliveryRecordGroups(filteredDeliveries)}
       </div>
     </section>
   `);
+}
+
+function deliveryFilterValues() {
+  return { status: "all", driver: "all", truck: "all", sourceBranchId: "all", ...(state.deliveryFilters || {}) };
+}
+
+function filteredDeliveryRecords(deliveries, filters) {
+  return deliveries
+    .filter((delivery) => filters.status === "all" || delivery.status === filters.status)
+    .filter((delivery) => filters.driver === "all" || delivery.driver === filters.driver)
+    .filter((delivery) => filters.truck === "all" || delivery.truck === filters.truck)
+    .filter((delivery) => filters.sourceBranchId === "all" || delivery.sourceBranchId === filters.sourceBranchId);
+}
+
+function deliveryFilterPanel(deliveries, filters) {
+  const drivers = uniqueDeliveryOptions(deliveries.map((delivery) => delivery.driver));
+  const trucks = uniqueDeliveryOptions(deliveries.map((delivery) => delivery.truck));
+  const branchIds = [...new Set(deliveries.map((delivery) => delivery.sourceBranchId).filter(Boolean))];
+  return `
+    <div class="form-grid filter-grid">
+      <label>Status<select data-delivery-filter="status">
+        <option value="all" ${filters.status === "all" ? "selected" : ""}>All status</option>
+        ${[["pending", "Pending"], ["in_transit", "In transit"], ["completed", "Completed"], ["cancelled", "Cancelled"]].map(([value, label]) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</option>`).join("")}
+      </select></label>
+      <label>Driver<select data-delivery-filter="driver">
+        <option value="all" ${filters.driver === "all" ? "selected" : ""}>All drivers</option>
+        ${drivers.map((driver) => `<option value="${escapeHtml(driver)}" ${filters.driver === driver ? "selected" : ""}>${escapeHtml(driver)}</option>`).join("")}
+      </select></label>
+      <label>Plate number<select data-delivery-filter="truck">
+        <option value="all" ${filters.truck === "all" ? "selected" : ""}>All plates</option>
+        ${trucks.map((truck) => `<option value="${escapeHtml(truck)}" ${filters.truck === truck ? "selected" : ""}>${escapeHtml(truck)}</option>`).join("")}
+      </select></label>
+      <label>Location<select data-delivery-filter="sourceBranchId">
+        <option value="all" ${filters.sourceBranchId === "all" ? "selected" : ""}>All locations</option>
+        ${branchIds.map((branchId) => `<option value="${branchId}" ${filters.sourceBranchId === branchId ? "selected" : ""}>${branchName(branchId)}</option>`).join("")}
+      </select></label>
+    </div>
+  `;
+}
+
+function uniqueDeliveryOptions(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
 function deliveryRecordGroups(deliveries) {
@@ -2152,39 +2200,76 @@ function employeeMaintenanceTable() {
 
 function payrollView() {
   const editingPayroll = state.payrollRuns.find((run) => run.id === state.editingPayrollId) || null;
+  const editingCashAdvance = state.cashAdvances.find((advance) => advance.id === state.editingCashAdvanceId) || null;
+  const activeTab = state.payrollTab || "summary";
   return page("Payroll", "Manage employees, cash advances, and payroll net pay calculations.", `
     <section class="grid">
       ${payrollForm(editingPayroll)}
-      <form class="panel" data-action="add-cash-advance">
-        <div class="panel-head"><h3>New cash advance</h3></div>
-        <div class="form-grid">
-          ${employeeSelect("employeeId")}
-          ${dateInput("date", today())}
-          ${input("amount", "Amount", "number", "0", "0.01")}
-          ${input("reason", "Reason", "text")}
-          ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]])}
+      <div class="panel">
+        <div class="panel-head"><h3>Payroll results</h3><span class="mini-label">${state.payrollRuns.length} payslip${state.payrollRuns.length === 1 ? "" : "s"}</span></div>
+        <div class="tab-row">
+          ${payrollTabButton("summary", "Payroll summary", activeTab)}
+          ${payrollTabButton("cash_advances", "Cash advance records", activeTab)}
+          ${payrollTabButton("attendance", "Attendance payroll tracker", activeTab)}
         </div>
-        <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
-      </form>
-      <div class="panel">
-        <div class="panel-head"><h3>Cash advance records</h3></div>
-        ${cashAdvanceTable()}
+        ${activeTab === "summary" ? payrollSummaryTab() : ""}
+        ${activeTab === "cash_advances" ? payrollCashAdvanceTab() : ""}
+        ${activeTab === "attendance" ? payrollAttendanceTrackerTab() : ""}
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Download all payrolls</button></div>
-        ${payrollSummaryTable()}
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Attendance payroll tracker</h3><span class="mini-label">Regular and O.T hours</span></div>
-        ${attendancePayrollTracker()}
-      </div>
+      ${cashAdvanceForm(editingCashAdvance)}
     </section>
   `);
 }
 
+function payrollTabButton(tab, label, activeTab) {
+  return `<button class="${activeTab === tab ? "active" : ""}" data-payroll-tab="${tab}">${label}</button>`;
+}
+
+function payrollSummaryTab() {
+  return `
+    <div class="panel-head inner-head"><h3>Payroll summary</h3><button class="btn secondary" data-export="payroll">Download all payrolls</button></div>
+    ${payrollSummaryTable()}
+  `;
+}
+
+function payrollCashAdvanceTab() {
+  return `
+    <div class="panel-head inner-head"><h3>Cash advance records</h3></div>
+    ${cashAdvanceTable()}
+  `;
+}
+
+function payrollAttendanceTrackerTab() {
+  return `
+    <div class="panel-head inner-head"><h3>Attendance payroll tracker</h3><span class="mini-label">Regular and O.T hours</span></div>
+    ${attendancePayrollTracker()}
+  `;
+}
+
+function cashAdvanceForm(advance = null) {
+  const action = advance ? "update-cash-advance" : "add-cash-advance";
+  return `
+    <form class="panel" data-action="${action}">
+      <div class="panel-head">
+        <h3>${advance ? `Edit cash advance - ${employeeName(advance.employeeId)}` : "New cash advance"}</h3>
+        ${advance ? `<button class="btn secondary" type="button" data-action="cancel-cash-advance-edit">Cancel edit</button>` : ""}
+      </div>
+      ${advance ? `<input type="hidden" name="id" value="${advance.id}">` : ""}
+      <div class="form-grid">
+        ${employeeSelect("employeeId", advance?.employeeId)}
+        ${dateInput("date", advance?.date || today())}
+        ${input("amount", "Amount", "number", advance?.amount ?? "0", "0.01")}
+        ${input("reason", "Reason", "text", advance?.reason || "")}
+        ${select("status", [["active", "Active"], ["fully_deducted", "Fully deducted"], ["cancelled", "Cancelled"]], advance?.status)}
+      </div>
+      <button class="btn" type="submit" style="margin-top:12px">${advance ? "Save changes" : "Save cash advance"}</button>
+    </form>
+  `;
+}
+
 function cashAdvanceTable() {
-  return table(["Employee", "Date", "Amount", "Reason", "Status"], state.cashAdvances.map((advance) => `
-    <tr><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
+  return table(["Action", "Employee", "Date", "Amount", "Reason", "Status"], state.cashAdvances.map((advance) => `
+    <tr class="${state.editingCashAdvanceId === advance.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-cash-advance="${advance.id}">Edit</button></td><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
   `));
 }
 
@@ -2361,6 +2446,8 @@ function attendancePayrollTotals(employeeId, periodStart, periodEnd) {
 
 function applyAttendancePayrollCalculation(form) {
   const employeeId = form.elements.namedItem("employeeId")?.value || "";
+  const employee = state.employees.find((item) => item.id === employeeId);
+  const employeeRate = Number(employee?.rate || 0);
   const periodStart = form.elements.namedItem("periodStart")?.value || "";
   const periodEnd = form.elements.namedItem("periodEnd")?.value || "";
   const totals = attendancePayrollTotals(employeeId, periodStart, periodEnd);
@@ -2370,9 +2457,11 @@ function applyAttendancePayrollCalculation(form) {
   const overtimeHours = form.elements.namedItem("overtimeHours");
   const overtimeAmount = form.elements.namedItem("overtimeAmount");
   const cashAdvanceDeductionField = form.elements.namedItem("cashAdvanceDeduction");
+  if (monthlySalary) monthlySalary.value = employeeRate.toFixed(2);
   if (totals.records.length) {
-    if (monthlySalary) monthlySalary.value = totals.basicPay.toFixed(2);
     if (basicPay) basicPay.value = totals.basicPay.toFixed(2);
+  } else if (basicPay) {
+    basicPay.value = employeeRate.toFixed(2);
   }
   if (overtimeHours) overtimeHours.value = totals.overtimeHours.toFixed(2);
   if (overtimeAmount) overtimeAmount.value = totals.overtimeAmount.toFixed(2);
@@ -2673,9 +2762,10 @@ function table(headers, rows) {
 }
 
 function badge(text) {
-  const safe = String(text || "").replaceAll("_", " ");
-  const className = ["paid", "active", "completed", "approved", "closed"].includes(text) ? "good" : ["partial", "pending", "draft", "in_transit", "open"].includes(text) ? "warn" : ["unpaid", "inactive", "cancelled"].includes(text) ? "danger" : "";
-  return `<span class="badge ${className}">${safe}</span>`;
+  const raw = String(text || "").trim();
+  const key = raw.toLowerCase().replace(/\s+/g, "_");
+  const safe = raw.replaceAll("_", " ");
+  return `<span class="badge status-${key || "unknown"}">${safe}</span>`;
 }
 
 function input(name, labelText, type = "text", value = "", step = "") {
@@ -3007,6 +3097,23 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-edit-cash-advance]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingCashAdvanceId = button.dataset.editCashAdvance;
+      state.payrollTab = "cash_advances";
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='cancel-cash-advance-edit']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingCashAdvanceId = null;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-attendance-date]").forEach((field) => {
     field.addEventListener("change", () => {
       state.attendanceDate = field.value || today();
@@ -3083,11 +3190,28 @@ function bindEvents() {
     updateDeliveryStockLimits(form);
   });
 
+  document.querySelectorAll("[data-delivery-filter]").forEach((field) => {
+    field.addEventListener("change", () => {
+      state.deliveryFilters = deliveryFilterValues();
+      state.deliveryFilters[field.dataset.deliveryFilter] = field.value;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-payroll-form]").forEach((form) => {
     const update = () => updatePayrollSummary(form);
     form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
     form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
     updatePayrollSummary(form);
+  });
+
+  document.querySelectorAll("[data-payroll-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.payrollTab = button.dataset.payrollTab;
+      saveState();
+      render();
+    });
   });
 
   highlightPositiveNumberFields();
@@ -3158,6 +3282,7 @@ function handleForm(action, data) {
     "add-employee": addEmployee,
     "update-employee": updateEmployee,
     "add-cash-advance": addCashAdvance,
+    "update-cash-advance": updateCashAdvance,
     "add-user": addUser,
     "update-user": updateUser,
   };
@@ -3924,15 +4049,33 @@ function yearsOfService(startDate) {
 }
 
 function addCashAdvance(data) {
+  const advance = cashAdvanceValues(data);
+  if (!advance) return;
+  state.cashAdvances.push({ id: id("ca"), ...advance });
+  saveState();
+  render();
+}
+
+function updateCashAdvance(data) {
+  const index = state.cashAdvances.findIndex((advance) => advance.id === data.id);
+  if (index === -1) return;
+  const values = cashAdvanceValues(data);
+  if (!values) return;
+  state.cashAdvances[index] = { ...state.cashAdvances[index], ...values };
+  state.editingCashAdvanceId = null;
+  state.payrollTab = "cash_advances";
+  saveState();
+  render();
+}
+
+function cashAdvanceValues(data) {
   const amount = Number(data.amount || 0);
   if (!Number.isFinite(amount) || amount <= 0) {
     alert("Cash advance blocked: amount must be greater than 0.");
-    return;
+    return null;
   }
   const totalDeduction = amount;
-  state.cashAdvances.push({ id: id("ca"), employeeId: data.employeeId, date: data.date, amount, reason: data.reason, totalDeduction, balance: Math.max(amount - totalDeduction, 0), status: data.status });
-  saveState();
-  render();
+  return { employeeId: data.employeeId, date: data.date, amount, reason: data.reason, totalDeduction, balance: Math.max(amount - totalDeduction, 0), status: data.status };
 }
 
 function addUser(data) {
