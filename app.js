@@ -209,6 +209,7 @@ const seedState = {
     { id: "u3", name: "Payroll Staff", email: "payroll@junkshop.local", password: "payroll123", role: "payroll", branchId: "b1", status: "active" },
   ],
   parties: [
+    { id: "walk-in", type: "supplier", name: "Walk In", contact: "", address: "", notes: "Default walk-in transaction contact", status: "active" },
     { id: "p1", type: "supplier", name: "Mang Jun Scrap", contact: "0918 200 0011", address: "Poblacion", notes: "Regular seller", status: "active" },
     { id: "p2", type: "customer", name: "Metro Recycling Buyer", contact: "0918 200 0012", address: "Industrial Zone", notes: "Bulk buyer", status: "active" },
   ],
@@ -263,9 +264,9 @@ function monthStart(dateValue = today()) {
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return structuredClone(seedState);
+  if (!saved) return normalizeState(structuredClone(seedState));
   const parsed = JSON.parse(saved);
-  return {
+  return normalizeState({
     ...structuredClone(seedState),
     ...parsed,
     reportFilters: { ...seedState.reportFilters, ...(parsed.reportFilters || {}) },
@@ -290,11 +291,8 @@ function loadState() {
         balance: Math.max(amount - totalDeduction, 0),
       };
     }),
-    transactions: (parsed.transactions || seedState.transactions).map((transaction) => ({
-      ...transaction,
-      basePrice: transaction.basePrice ?? transaction.price ?? 0,
-      demandPrice: transaction.demandPrice ?? "",
-    })),
+    parties: parsed.parties || seedState.parties,
+    transactions: parsed.transactions || seedState.transactions,
     employees: (parsed.employees || seedState.employees).map((employee) => ({
       sssNo: "",
       pagibigNo: "",
@@ -302,7 +300,32 @@ function loadState() {
       startDate: "",
       ...employee,
     })),
+  });
+}
+
+function normalizeState(nextState) {
+  const parties = ensureWalkInParty(nextState.parties || []);
+  const walkInPartyId = parties.find((party) => party.status === "active" && party.name?.trim().toLowerCase() === "walk in")?.id || "";
+  return {
+    ...nextState,
+    parties,
+    selectedTransactionPartyId: nextState.repeatTransactionPartyId ? nextState.selectedTransactionPartyId : walkInPartyId,
+    transactions: (nextState.transactions || []).map((transaction) => ({
+      ...transaction,
+      basePrice: transaction.basePrice ?? transaction.price ?? 0,
+      demandPrice: transaction.demandPrice ?? "",
+      receiptNumber: transaction.receiptNumber || "",
+    })),
   };
+}
+
+function ensureWalkInParty(parties = []) {
+  const hasWalkIn = parties.some((party) => party.id === "walk-in" || party.name?.trim().toLowerCase() === "walk in");
+  if (hasWalkIn) return parties;
+  return [
+    { id: "walk-in", type: "supplier", name: "Walk In", contact: "", address: "", notes: "Default walk-in transaction contact", status: "active" },
+    ...parties,
+  ];
 }
 
 function saveState() {
@@ -1251,7 +1274,7 @@ function timeInputValue(value) {
 function printReceipt(transactionId) {
   const tx = state.transactions.find((item) => item.id === transactionId);
   if (!tx) return;
-  printTransactionReceipt([tx], tx.number);
+  printTransactionReceipt([tx], tx.receiptNumber || tx.number);
 }
 
 function printCustomerReceipt(partyId) {
@@ -1698,7 +1721,7 @@ function barcode(value) {
 function transactionsView() {
   const transactions = branchFilter(state.transactions);
   const editingTransaction = transactions.find((tx) => tx.id === state.editingTransactionId) || null;
-  const selectedPartyId = editingTransaction?.partyId || state.selectedTransactionPartyId || state.repeatTransactionPartyId || state.parties.find((party) => party.status === "active")?.id || "";
+  const selectedPartyId = editingTransaction?.partyId || state.repeatTransactionPartyId || state.selectedTransactionPartyId || defaultWalkInPartyId() || state.parties.find((party) => party.status === "active")?.id || "";
   return page("Transactions", "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.", `
     <section class="grid">
       ${transactionForm(editingTransaction)}
@@ -1713,7 +1736,7 @@ function transactionsView() {
 
 function transactionForm(tx = null) {
   const action = tx ? "update-transaction" : "add-transaction";
-  const selectedPartyId = tx?.partyId || state.selectedTransactionPartyId || state.repeatTransactionPartyId || "";
+  const selectedPartyId = tx?.partyId || state.repeatTransactionPartyId || state.selectedTransactionPartyId || defaultWalkInPartyId();
   const originalDate = tx?.date || "";
   return `
     <form class="panel" data-action="${action}" data-transaction-form>
@@ -1727,6 +1750,7 @@ function transactionForm(tx = null) {
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
         ${partySelect("partyId", selectedPartyId)}
+        ${optionalInput("receiptNumber", "Receipt number", "text", tx?.receiptNumber || "")}
         ${materialSelect("materialId", tx?.materialId)}
         <label>${t("Weight in kilos")}<input name="weight" type="number" value="${tx?.weight ?? ""}" step="0.01" min="0.01" required></label>
         ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
@@ -1753,8 +1777,8 @@ function selectedPartyTransactionHistory(partyId) {
         <h3 class="danger-text">${escapeHtml(partyName(partyId))} transactions</h3>
         <span class="mini-label danger-text">All records, no branch filter</span>
       </div>
-      ${table(["Action", "No.", "Date", "Branch", "Type", "Material", "Weight", "Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-        <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(transactionPrice(tx))}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+      ${table(["Action", "No.", "Receipt No.", "Date", "Branch", "Type", "Material", "Weight", "Price", "Total", "Paid", "Balance"], rows.map((tx) => `
+        <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${tx.date}</td><td>${branchName(tx.branchId)}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(transactionPrice(tx))}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
       `))}
     </div>
   `;
@@ -1774,8 +1798,8 @@ function customerTransactionGroups(transactions) {
           <div><h3>${escapeHtml(partyName(partyId))}</h3><small>${rows.length} transaction${rows.length === 1 ? "" : "s"} - ${money(total)}</small></div>
           <button class="btn secondary" data-print-customer-receipt="${partyId}">Print customer receipt</button>
         </div>
-        ${table(["Action", "No.", "Date", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+        ${table(["Action", "No.", "Receipt No.", "Date", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
+          <tr class="${state.editingTransactionId === tx.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-transaction="${tx.id}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${tx.date}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
         `))}
       </section>
     `;
@@ -2614,8 +2638,8 @@ function reportIncomeTab(profitRows) {
 }
 
 function transactionReportTable(rows) {
-  return table(["Date", "Name", "Material", "Weight", "Price", "Demand Price", "Total", "Payment"], rows.map((tx) => `
-    <tr><td>${tx.date}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
+  return table(["Date", "Receipt No.", "Name", "Material", "Weight", "Price", "Demand Price", "Total", "Payment"], rows.map((tx) => `
+    <tr><td>${tx.date}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
   `));
 }
 
@@ -2800,6 +2824,10 @@ function branchSelect(name, labelText = "Branch", includeBlank = false, selected
 
 function partySelect(name, selectedValue = "") {
   return `<label>Customer or supplier<select name="${name}">${state.parties.filter((party) => party.status === "active").map((party) => `<option value="${party.id}" ${selectedValue === party.id ? "selected" : ""}>${party.name} (${party.type})</option>`).join("")}</select></label>`;
+}
+
+function defaultWalkInPartyId() {
+  return state.parties.find((party) => party.status === "active" && party.name?.trim().toLowerCase() === "walk in")?.id || "";
 }
 
 function destinationSelect(selectedValue = "") {
@@ -3479,6 +3507,7 @@ function transactionValues(data, existingNumber = null) {
   const paid = data.paymentStatus === "paid" ? total : data.paymentStatus === "unpaid" ? 0 : Math.min(Number(data.paid || 0), total);
   return {
     number: existingNumber || `TRX-${String(state.transactions.length + 1).padStart(4, "0")}`,
+    receiptNumber: data.receiptNumber?.trim() || "",
     date: data.date,
     branchId: data.branchId,
     type: data.type,
@@ -3536,7 +3565,7 @@ function addTransaction(data) {
   state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id });
   state.stockMovements.push(autoStockMovement(tx));
   state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
-  state.selectedTransactionPartyId = data.partyId;
+  state.selectedTransactionPartyId = state.repeatTransactionPartyId || defaultWalkInPartyId();
   saveState();
   render();
 }
@@ -3653,7 +3682,7 @@ function updateTransaction(data) {
     state.stockMovements.push(autoStockMovement(tx));
     state.editingTransactionId = null;
     state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
-    state.selectedTransactionPartyId = data.partyId;
+    state.selectedTransactionPartyId = state.repeatTransactionPartyId || defaultWalkInPartyId();
     saveState();
     render();
     return;
@@ -3667,7 +3696,7 @@ function updateTransaction(data) {
   state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== existing.number);
   state.stockMovements.push(autoStockMovement(tx));
   state.editingTransactionId = null;
-  state.selectedTransactionPartyId = data.partyId;
+  state.selectedTransactionPartyId = defaultWalkInPartyId();
   saveState();
   render();
 }
