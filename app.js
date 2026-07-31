@@ -170,6 +170,7 @@ const seedState = {
   language: "en",
   reportFilters: { from: "", to: "", branchId: "all" },
   reportTab: "summary",
+  transactionTab: "walk_in",
   inventoryFilters: { materialId: "all", branchId: "all" },
   inventoryTab: "position",
   deliveryFilters: { status: "all", driver: "all", truck: "all", sourceBranchId: "all" },
@@ -187,6 +188,7 @@ const seedState = {
   editingPayrollId: null,
   editingCashAdvanceId: null,
   repeatTransactionPartyId: "",
+  repeatTransactionReceiptNumber: "",
   selectedTransactionPartyId: "",
   repeatDeliveryId: "",
   cashOperationDate: today(),
@@ -310,6 +312,8 @@ function normalizeState(nextState) {
     ...nextState,
     parties,
     selectedTransactionPartyId: nextState.repeatTransactionPartyId ? nextState.selectedTransactionPartyId : walkInPartyId,
+    repeatTransactionReceiptNumber: nextState.repeatTransactionReceiptNumber || "",
+    transactionTab: nextState.transactionTab || "walk_in",
     transactions: (nextState.transactions || []).map((transaction) => ({
       ...transaction,
       basePrice: transaction.basePrice ?? transaction.price ?? 0,
@@ -1721,22 +1725,32 @@ function barcode(value) {
 function transactionsView() {
   const transactions = branchFilter(state.transactions);
   const editingTransaction = transactions.find((tx) => tx.id === state.editingTransactionId) || null;
-  const selectedPartyId = editingTransaction?.partyId || state.repeatTransactionPartyId || state.selectedTransactionPartyId || defaultWalkInPartyId() || state.parties.find((party) => party.status === "active")?.id || "";
+  const activeTab = state.transactionTab || "walk_in";
+  const walkInPartyId = defaultWalkInPartyId();
+  const walkInTransactions = walkInPartyId ? transactions.filter((tx) => tx.partyId === walkInPartyId) : [];
   return page("Transactions", "Record purchases and sales. Use Edit transaction on any saved row to update a previous transaction.", `
     <section class="grid">
       ${transactionForm(editingTransaction)}
-      ${selectedPartyTransactionHistory(selectedPartyId)}
       <div class="panel">
-        <div class="panel-head"><h3>Recent transactions</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
-        ${customerTransactionGroups(transactions)}
+        <div class="panel-head"><h3>${activeTab === "walk_in" ? "Walk In transactions" : "Recent transactions"}</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
+        <div class="tab-row">
+          ${transactionTabButton("walk_in", "Walk In transactions", activeTab)}
+          ${transactionTabButton("recent", "Recent transactions", activeTab)}
+        </div>
+        ${activeTab === "walk_in" ? customerTransactionGroups(walkInTransactions) : customerTransactionGroups(transactions)}
       </div>
     </section>
   `);
 }
 
+function transactionTabButton(tab, label, activeTab) {
+  return `<button class="${activeTab === tab ? "active" : ""}" data-transaction-tab="${tab}">${label}</button>`;
+}
+
 function transactionForm(tx = null) {
   const action = tx ? "update-transaction" : "add-transaction";
   const selectedPartyId = tx?.partyId || state.repeatTransactionPartyId || state.selectedTransactionPartyId || defaultWalkInPartyId();
+  const receiptNumber = tx?.receiptNumber || state.repeatTransactionReceiptNumber || "";
   const originalDate = tx?.date || "";
   return `
     <form class="panel" data-action="${action}" data-transaction-form>
@@ -1750,7 +1764,7 @@ function transactionForm(tx = null) {
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
         ${partySelect("partyId", selectedPartyId)}
-        ${optionalInput("receiptNumber", "Receipt number", "text", tx?.receiptNumber || "")}
+        ${optionalInput("receiptNumber", "Receipt number", "text", receiptNumber)}
         ${materialSelect("materialId", tx?.materialId)}
         <label>${t("Weight in kilos")}<input name="weight" type="number" value="${tx?.weight ?? ""}" step="0.01" min="0.01" required></label>
         ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
@@ -1760,7 +1774,7 @@ function transactionForm(tx = null) {
       </div>
       <div class="notice" data-transaction-summary style="margin-top:12px">Total: PHP 0.00 | Balance: PHP 0.00</div>
       <label style="margin-top:10px">Notes<textarea name="notes">${tx?.notes || ""}</textarea></label>
-      <label class="check-row ${tx ? "hidden" : ""}" data-save-as-repeat-row><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer</label>
+      <label class="check-row" data-save-as-repeat-row><input type="checkbox" name="keepSameCustomer" value="yes" ${state.repeatTransactionPartyId ? "checked" : ""}> Process another transaction with the same customer and receipt number</label>
       <button class="btn" type="submit" style="margin-top:12px" data-transaction-submit>${tx ? "Save changes" : "Save transaction"}</button>
     </form>
   `;
@@ -3195,6 +3209,14 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-transaction-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.transactionTab = button.dataset.transactionTab;
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-transaction-form]").forEach((form) => {
     const update = (event) => {
       updateTransactionAmounts(form, event?.target);
@@ -3415,12 +3437,10 @@ function transactionDateChanged(form) {
 
 function updateTransactionSubmitLabel(form) {
   const button = form.querySelector("[data-transaction-submit]");
-  const repeatRow = form.querySelector("[data-save-as-repeat-row]");
   if (!button) return;
   if (form.dataset.action === "update-transaction") {
     const saveAs = transactionDateChanged(form);
     button.textContent = saveAs ? "Save as" : "Save changes";
-    repeatRow?.classList.toggle("hidden", !saveAs);
   }
 }
 
@@ -3555,6 +3575,13 @@ function stockForEdit(branchId, materialId, transactionNumber = null) {
     .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 }
 
+function setRepeatTransactionState(data) {
+  const repeat = data.keepSameCustomer === "yes";
+  state.repeatTransactionPartyId = repeat ? data.partyId : "";
+  state.repeatTransactionReceiptNumber = repeat ? data.receiptNumber?.trim() || "" : "";
+  state.selectedTransactionPartyId = repeat ? data.partyId : defaultWalkInPartyId();
+}
+
 function addTransaction(data) {
   if (!validTransactionWeight(data)) return;
   const tx = transactionValues(data);
@@ -3564,8 +3591,7 @@ function addTransaction(data) {
   }
   state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id });
   state.stockMovements.push(autoStockMovement(tx));
-  state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
-  state.selectedTransactionPartyId = state.repeatTransactionPartyId || defaultWalkInPartyId();
+  setRepeatTransactionState(data);
   saveState();
   render();
 }
@@ -3681,8 +3707,7 @@ function updateTransaction(data) {
     state.transactions.push({ id: id("t"), ...tx, createdBy: currentUser().id, sourceTransactionId: existing.id });
     state.stockMovements.push(autoStockMovement(tx));
     state.editingTransactionId = null;
-    state.repeatTransactionPartyId = data.keepSameCustomer === "yes" ? data.partyId : "";
-    state.selectedTransactionPartyId = state.repeatTransactionPartyId || defaultWalkInPartyId();
+    setRepeatTransactionState(data);
     saveState();
     render();
     return;
@@ -3696,7 +3721,7 @@ function updateTransaction(data) {
   state.stockMovements = state.stockMovements.filter((movement) => movement.reference !== existing.number);
   state.stockMovements.push(autoStockMovement(tx));
   state.editingTransactionId = null;
-  state.selectedTransactionPartyId = defaultWalkInPartyId();
+  setRepeatTransactionState(data);
   saveState();
   render();
 }
@@ -3713,6 +3738,7 @@ function deleteTransaction(transactionId) {
   }
   if (state.repeatTransactionPartyId === tx.partyId && !state.transactions.some((item) => item.partyId === tx.partyId)) {
     state.repeatTransactionPartyId = "";
+    state.repeatTransactionReceiptNumber = "";
   }
   saveState();
   render();
