@@ -1,4 +1,5 @@
 const STORAGE_KEY = "junkshop-mvp-state-v1";
+const LOCATION_LIMIT = 3;
 
 const roles = {
   admin: "Admin",
@@ -2872,7 +2873,7 @@ function branchesView() {
     <section class="split">
       ${branchForm(editingBranch)}
       <div class="panel">
-        <div class="panel-head"><h3>Locations</h3></div>
+        <div class="panel-head"><h3>Locations</h3><span class="mini-label">${state.branches.length}/${LOCATION_LIMIT} locations</span></div>
         ${reportSheetTable(["Action", "Code", "Location", "Address", "Contact", "Status"], state.branches.map((branch) => `
           <tr class="${state.editingBranchId === branch.id ? "row-editing" : ""}">
             <td><button class="btn secondary" data-edit-branch="${branch.id}">Edit</button> <button class="btn danger" data-delete-branch="${branch.id}">Delete</button></td>
@@ -2896,6 +2897,7 @@ function branchForm(branch = null) {
         <h3>${branch ? `Edit ${branch.name}` : "Add location"}</h3>
         ${branch ? `<button class="btn secondary" type="button" data-action="cancel-branch-edit">Cancel edit</button>` : ""}
       </div>
+      ${branch ? "" : `<div class="notice" style="margin-bottom:12px">Location limit is ${LOCATION_LIMIT}. To add more locations, please request access so we can grant an additional location.</div>`}
       ${branch ? `<input type="hidden" name="id" value="${branch.id}">` : ""}
       <div class="form-grid">
         ${input("code", "Code", "text", branch?.code || "")}
@@ -4374,6 +4376,10 @@ function validateBranch(data, existingId = "") {
 
 function addBranch(data) {
   if (!validateBranch(data)) return;
+  if (state.branches.length >= LOCATION_LIMIT) {
+    alert(`Location limit reached. This account includes up to ${LOCATION_LIMIT} locations. To add another location, please request access so we can grant an additional location.`);
+    return;
+  }
   state.branches.push(branchValues(data));
   saveState();
   render();
