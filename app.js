@@ -2019,6 +2019,9 @@ function inventoryMovementsTab(movements) {
 
 function inventoryMaterialsTab(filters) {
   const rows = stockPositionRows(filters).filter((row) => row.currentStockKg !== 0 || filters.materialId !== "all" || filters.branchId !== "all");
+  const totalBuyingPricePerKilo = rows.reduce((sum, row) => sum + Number(row.buyingPricePerKilo || 0), 0);
+  const totalSellingPricePerKilo = rows.reduce((sum, row) => sum + Number(row.sellingPricePerKilo || 0), 0);
+  const totalEstimatedValue = rows.reduce((sum, row) => sum + Number(row.estimatedValue || 0), 0);
   const tableRows = rows.map((row) => {
     const transactions = state.transactions
       .filter((tx) => tx.materialId === row.materialId && tx.branchId === row.branchId)
@@ -2026,7 +2029,7 @@ function inventoryMaterialsTab(filters) {
     return `<tr><td>${row.material}</td><td>${row.category}</td><td>${row.unit}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.buyingPricePerKilo)}</td><td class="amount">${money(row.sellingPricePerKilo)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td><td class="num">${transactions.length}</td><td>${transactions[0]?.date || "-"}</td></tr>`;
   });
   if (rows.length) {
-    tableRows.push(`<tr class="report-total-row"><td colspan="6">Total Estimated Value</td><td class="amount">${money(rows.reduce((sum, row) => sum + Number(row.estimatedValue || 0), 0))}</td><td></td><td></td><td></td></tr>`);
+    tableRows.push(`<tr class="report-total-row"><td colspan="4">Total</td><td class="amount">${money(totalBuyingPricePerKilo)}</td><td class="amount">${money(totalSellingPricePerKilo)}</td><td class="amount">${money(totalEstimatedValue)}</td><td></td><td></td><td></td></tr>`);
   }
   return `
     <div class="panel-head inner-head"><h3>List of materials</h3></div>
@@ -2959,7 +2962,7 @@ function destinationForm(destination = null) {
 function usersView() {
   const editingUser = state.users.find((user) => user.id === state.editingUserId) || null;
   return page("Users", "Admin user management for role-based access.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${userForm(editingUser)}
       <div class="panel">
         <div class="panel-head"><h3>User records</h3></div>
