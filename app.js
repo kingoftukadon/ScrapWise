@@ -1764,7 +1764,7 @@ function transactionsView() {
       ${editingReceiptRows.length ? receiptEditForm(editingReceiptRows) : transactionForm(editingTransaction)}
       <div class="panel">
         <div class="panel-head"><h3>${activeTab === "walk_in" ? "Walk In transactions" : "Recent transactions"}</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
-        <div class="tab-row">
+        <div class="tab-row report-tab-row">
           ${transactionTabButton("walk_in", "Walk In transactions", activeTab)}
           ${transactionTabButton("recent", "Recent transactions", activeTab)}
         </div>
@@ -1859,8 +1859,8 @@ function transactionForm(tx = null) {
         ${branchSelect("branchId", "Branch", false, tx?.branchId)}
         ${select("type", [["purchase", "Purchase"], ["sale", "Sale"]], tx?.type)}
         ${partySelect("partyId", selectedPartyId)}
-        ${input("receiptNumber", "Receipt number", "text", receiptNumber)}
-        ${materialSelect("materialId", tx?.materialId)}
+        <label>Receipt number<input name="receiptNumber" type="text" value="${escapeHtml(receiptNumber)}" placeholder="Required receipt number" required></label>
+        ${materialSelect("materialId", tx?.materialId, true, true)}
         <label>${t("Weight in kilos")}<input name="weight" type="number" value="${tx?.weight ?? ""}" step="0.01" min="0.01" required></label>
         ${input("price", "Price per kilo", "number", tx?.basePrice ?? tx?.price ?? "", "0.01")}
         ${numberInput("demandPrice", "Price per demand", tx?.demandPrice ?? "", "0.01", false)}
@@ -1921,6 +1921,10 @@ function receiptTransactionGroup(rows) {
   const total = rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0);
   const paid = rows.reduce((sum, tx) => sum + Number(tx.paid || 0), 0);
   const balance = rows.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
+  const tableRows = rows.map((tx) => `
+    <tr class="${state.editingReceiptGroupId === tx.receiptGroupId ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-receipt="${tx.receiptGroupId || tx.receiptNumber || tx.number}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
+  `);
+  tableRows.push(`<tr class="report-total-row"><td colspan="4">Total</td><td class="num">${kg(rows.reduce((sum, tx) => sum + Number(tx.weight || 0), 0))}</td><td></td><td></td><td class="amount">${money(total)}</td><td class="amount">${money(paid)}</td><td class="amount">${money(balance)}</td></tr>`);
   return `
     <section class="customer-group">
       <div class="customer-head">
@@ -1933,9 +1937,7 @@ function receiptTransactionGroup(rows) {
           <button class="btn secondary" data-print-receipt="${first.id}">Print receipt</button>
         </div>
       </div>
-      ${table(["Action", "No.", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], rows.map((tx) => `
-        <tr class="${state.editingReceiptGroupId === tx.receiptGroupId ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-receipt="${tx.receiptGroupId || tx.receiptNumber || tx.number}">Edit</button> <button class="btn secondary" data-print-receipt="${tx.id}">Print</button> <button class="btn danger" data-delete-transaction="${tx.id}">Delete</button></td><td>${tx.number}</td><td>${badge(tx.type)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td></tr>
-      `))}
+      ${reportSheetTable(["Action", "No.", "Type", "Material", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance"], tableRows)}
     </section>
   `;
 }
@@ -1948,7 +1950,7 @@ function inventoryView() {
     <section class="grid">
       <div class="panel">
         <div class="panel-head"><h3>Inventory workspace</h3><button class="btn secondary" data-export-excel="inventory">Download Excel</button></div>
-        <div class="tab-row">
+        <div class="tab-row report-tab-row">
           ${inventoryTabButton("position", "Stock position", activeTab)}
           ${inventoryTabButton("movements", "Stock movements", activeTab)}
           ${inventoryTabButton("materials", "List of materials", activeTab)}
@@ -1981,7 +1983,7 @@ function inventoryStockPositionTab(filters) {
   const totalEstimatedValue = rows.reduce((sum, row) => sum + row.estimatedValue, 0);
   const tableRows = rows.map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`);
   tableRows.push(`<tr class="inventory-total-row"><td></td><td>Total Estimated Value</td><td class="amount">${money(totalEstimatedValue)}</td><td></td></tr>`);
-  return table(["Material", "Current Stock", "Estimated Value", "Location"], tableRows);
+  return reportSheetTable(["Material", "Current Stock", "Estimated Value", "Location"], tableRows);
 }
 
 function inventoryFilteredMovements(movements, filters) {
@@ -1996,17 +1998,28 @@ function inventoryMovementsTab(movements) {
       <h3>Stock movements</h3>
       ${isAdmin() ? `<button class="btn warning" data-modal="adjustment">Manual adjustment</button>` : ""}
     </div>
-    ${table(["Date", "Material", "Movement", "Quantity", "Reference", "Truck Plate", "Driver", "Delivery Status", "Notes"], movements.slice().reverse().map((move) => {
+    ${reportSheetTable(["Date", "Material", "Movement", "Quantity", "Reference", "Truck Plate", "Driver", "Delivery Status", "Notes"], movements.slice().reverse().map((move) => {
       const delivery = deliveryByReference(move.reference);
-      return `<tr><td>${move.date}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${delivery?.truck || ""}</td><td>${delivery?.driver || ""}</td><td>${delivery ? badge(delivery.status) : ""}</td><td>${move.notes || ""}</td></tr>`;
+      return `<tr><td>${move.date}</td><td>${materialName(move.materialId)}</td><td>${badge(move.type)}</td><td class="num">${kg(move.quantity)}</td><td>${move.reference}</td><td>${delivery?.truck || ""}</td><td>${delivery?.driver || ""}</td><td>${delivery ? badge(delivery.status) : ""}</td><td>${escapeHtml(move.notes || "")}</td></tr>`;
     }))}
   `;
 }
 
 function inventoryMaterialsTab(filters) {
   const rows = stockPositionRows(filters).filter((row) => row.currentStockKg !== 0 || filters.materialId !== "all" || filters.branchId !== "all");
-  if (!rows.length) return `<div class="notice">No material stock rows found for the selected filters.</div>`;
-  return `<div class="material-day-list">${rows.map((row) => inventoryMaterialDayCard(row)).join("")}</div>`;
+  const tableRows = rows.map((row) => {
+    const transactions = state.transactions
+      .filter((tx) => tx.materialId === row.materialId && tx.branchId === row.branchId)
+      .sort((a, b) => `${b.date} ${b.number}`.localeCompare(`${a.date} ${a.number}`));
+    return `<tr><td>${row.material}</td><td>${row.category}</td><td>${row.unit}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.buyingPricePerKilo)}</td><td class="amount">${money(row.sellingPricePerKilo)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td><td class="num">${transactions.length}</td><td>${transactions[0]?.date || "-"}</td></tr>`;
+  });
+  if (rows.length) {
+    tableRows.push(`<tr class="report-total-row"><td colspan="6">Total Estimated Value</td><td class="amount">${money(rows.reduce((sum, row) => sum + Number(row.estimatedValue || 0), 0))}</td><td></td><td></td><td></td></tr>`);
+  }
+  return `
+    <div class="panel-head inner-head"><h3>List of materials</h3></div>
+    ${reportSheetTable(["Material", "Category", "Unit", "Current Stock", "Buying Price / Kilo", "Selling Price / Kilo", "Estimated Value", "Location", "Transactions", "Latest Transaction"], tableRows)}
+  `;
 }
 
 function inventoryMaterialDayCard(row) {
@@ -2132,9 +2145,9 @@ function deliveryRecordGroups(deliveries) {
             <button class="btn secondary" data-print-delivery="${delivery.id}">Print</button>
           </div>
         </div>
-        ${table(["Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Actual Sold Cost", "Status"], [
+        ${reportSheetTable(["Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Actual Sold Cost", "Status"], [
           ...lines.map((line) => `<tr><td>${materialName(line.materialId)}</td><td class="num">${kg(line.loadedWeight)}</td><td class="num">${kg(line.deliveredWeight)}</td><td class="num">${deliveryDiscrepancyDisplay(delivery, line)}</td><td class="amount">${deliveryCalculatedLossDisplay(delivery, line)}</td><td class="amount">${money(deliveryLineEstimatedValue(line))}</td><td class="amount">${money(deliveryLineActualSoldCost(line))}</td><td>${badge(delivery.status)}</td></tr>`),
-          `<tr><td><strong>Truck load total</strong></td><td class="num"><strong>${kg(totals.loadedWeight)}</strong></td><td class="num"><strong>${kg(totals.deliveredWeight)}</strong></td><td class="num"><strong>${deliveryTotalDiscrepancyDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${deliveryTotalCalculatedLossDisplay(delivery, totals)}</strong></td><td class="amount"><strong>${money(totals.estimatedValue)}</strong></td><td class="amount"><strong>${money(totals.actualSoldCost)}</strong></td><td></td></tr>`,
+          `<tr class="report-total-row"><td>Truck load total</td><td class="num">${kg(totals.loadedWeight)}</td><td class="num">${kg(totals.deliveredWeight)}</td><td class="num">${deliveryTotalDiscrepancyDisplay(delivery, totals)}</td><td class="amount">${deliveryTotalCalculatedLossDisplay(delivery, totals)}</td><td class="amount">${money(totals.estimatedValue)}</td><td class="amount">${money(totals.actualSoldCost)}</td><td></td></tr>`,
         ])}
       </section>
     `;
@@ -2278,8 +2291,8 @@ function partyForm(party = null) {
 }
 
 function partyTable(parties) {
-  return table(["Action", "Type", "Name", "Contact", "Address", "Notes", "Status"], parties.map((party) => `
-    <tr class="${state.editingPartyId === party.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-party="${party.id}">Edit</button></td><td>${badge(party.type)}</td><td>${party.name}</td><td>${party.contact}</td><td>${party.address}</td><td>${party.notes || ""}</td><td>${badge(party.status)}</td></tr>
+  return reportSheetTable(["Action", "Type", "Name", "Contact", "Address", "Notes", "Status"], parties.map((party) => `
+    <tr class="${state.editingPartyId === party.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-party="${party.id}">Edit</button></td><td>${badge(party.type)}</td><td>${escapeHtml(party.name)}</td><td>${escapeHtml(party.contact)}</td><td>${escapeHtml(party.address)}</td><td>${escapeHtml(party.notes || "")}</td><td>${badge(party.status)}</td></tr>
   `));
 }
 
@@ -2290,8 +2303,8 @@ function materialsView() {
       ${materialForm(editingMaterial)}
       <div class="panel">
         <div class="panel-head"><h3>Material price list</h3></div>
-        ${table(["Action", "Material", "Category", "Buy", "Sell", "Unit", "Status"], state.materials.map((material) => `
-          <tr class="${state.editingMaterialId === material.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-material="${material.id}">Edit</button></td><td>${material.name}</td><td>${material.category}</td><td class="amount">${money(material.buyPrice)}</td><td class="amount">${money(material.sellPrice)}</td><td>${material.unit}</td><td>${badge(material.status)}</td></tr>
+        ${reportSheetTable(["Action", "Material", "Category", "Buy", "Sell", "Unit", "Status"], state.materials.map((material) => `
+          <tr class="${state.editingMaterialId === material.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-material="${material.id}">Edit</button></td><td>${escapeHtml(material.name)}</td><td>${escapeHtml(material.category)}</td><td class="amount">${money(material.buyPrice)}</td><td class="amount">${money(material.sellPrice)}</td><td>${escapeHtml(material.unit)}</td><td>${badge(material.status)}</td></tr>
         `))}
       </div>
     </section>
@@ -2360,8 +2373,8 @@ function employeeForm(employee = null) {
 }
 
 function employeeMaintenanceTable() {
-  return table(["Action", "Name", "Position", "Salary Type", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Start Date", "Years of Service", "Status"], state.employees.map((employee) => `
-    <tr class="${state.editingEmployeeId === employee.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-employee="${employee.id}">Edit</button> <button class="btn danger" data-delete-employee="${employee.id}">Delete</button></td><td>${employee.name}</td><td>${employee.position}</td><td>${badge(employee.salaryType)}</td><td class="amount">${money(employee.rate)}</td><td>${employee.sssNo || ""}</td><td>${employee.pagibigNo || ""}</td><td>${employee.benefits || ""}</td><td>${employee.startDate || ""}</td><td>${yearsOfService(employee.startDate)}</td><td>${badge(employee.status)}</td></tr>
+  return reportSheetTable(["Action", "Name", "Position", "Salary Type", "Rate", "SSS No.", "Pag-IBIG Number", "Other Benefits", "Start Date", "Years of Service", "Status"], state.employees.map((employee) => `
+    <tr class="${state.editingEmployeeId === employee.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-employee="${employee.id}">Edit</button> <button class="btn danger" data-delete-employee="${employee.id}">Delete</button></td><td>${escapeHtml(employee.name)}</td><td>${escapeHtml(employee.position)}</td><td>${badge(employee.salaryType)}</td><td class="amount">${money(employee.rate)}</td><td>${escapeHtml(employee.sssNo || "")}</td><td>${escapeHtml(employee.pagibigNo || "")}</td><td>${escapeHtml(employee.benefits || "")}</td><td>${employee.startDate || ""}</td><td>${yearsOfService(employee.startDate)}</td><td>${badge(employee.status)}</td></tr>
   `));
 }
 
@@ -2374,7 +2387,7 @@ function payrollView() {
       ${payrollForm(editingPayroll)}
       <div class="panel">
         <div class="panel-head"><h3>Payroll results</h3><span class="mini-label">${state.payrollRuns.length} payslip${state.payrollRuns.length === 1 ? "" : "s"}</span></div>
-        <div class="tab-row">
+        <div class="tab-row report-tab-row">
           ${payrollTabButton("summary", "Payroll summary", activeTab)}
           ${payrollTabButton("cash_advances", "Cash advance records", activeTab)}
           ${payrollTabButton("attendance", "Attendance payroll tracker", activeTab)}
@@ -2435,9 +2448,13 @@ function cashAdvanceForm(advance = null) {
 }
 
 function cashAdvanceTable() {
-  return table(["Action", "Employee", "Date", "Amount", "Reason", "Status"], state.cashAdvances.map((advance) => `
+  const rows = state.cashAdvances.map((advance) => `
     <tr class="${state.editingCashAdvanceId === advance.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-cash-advance="${advance.id}">Edit</button></td><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
-  `));
+  `);
+  if (state.cashAdvances.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="3">Total</td><td class="amount">${money(state.cashAdvances.reduce((sum, advance) => sum + Number(advance.amount || 0), 0))}</td><td></td><td></td></tr>`);
+  }
+  return reportSheetTable(["Action", "Employee", "Date", "Amount", "Reason", "Status"], rows);
 }
 
 function payrollForm(run = null) {
@@ -2535,14 +2552,18 @@ function payrollNumber(name, labelText, value = 0) {
 }
 
 function payrollSummaryTable() {
-  return table(["Action", "Period", "Pay Date", "Employee", "Gross Pay", "Deductions", "Net Pay", "Status"], state.payrollRuns.map((run) => `
+  const rows = state.payrollRuns.map((run) => `
     <tr class="${state.editingPayrollId === run.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-payroll="${run.id}">Edit</button> <button class="btn secondary" data-print-payroll="${run.id}">Print payslip</button></td><td>${run.period}</td><td>${run.payDate || ""}</td><td>${employeeName(run.employeeId)}</td><td class="amount">${money(payrollTotals(run).grossPay)}</td><td class="amount">${money(payrollTotals(run).totalDeduction)}</td><td class="amount">${money(payrollTotals(run).netPay)}</td><td>${badge(run.status)}</td></tr>
-  `));
+  `);
+  if (state.payrollRuns.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="4">Total</td><td class="amount">${money(state.payrollRuns.reduce((sum, run) => sum + Number(payrollTotals(run).grossPay || 0), 0))}</td><td class="amount">${money(state.payrollRuns.reduce((sum, run) => sum + Number(payrollTotals(run).totalDeduction || 0), 0))}</td><td class="amount">${money(state.payrollRuns.reduce((sum, run) => sum + Number(payrollTotals(run).netPay || 0), 0))}</td><td></td></tr>`);
+  }
+  return reportSheetTable(["Action", "Period", "Pay Date", "Employee", "Gross Pay", "Deductions", "Net Pay", "Status"], rows);
 }
 
 function attendancePayrollTracker() {
   const records = branchFilter(state.attendanceRecords).slice().sort((a, b) => `${b.date}${b.clockInAt}`.localeCompare(`${a.date}${a.clockInAt}`));
-  return table(["Date", "Employee", "Branch", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status"], records.map((record) => {
+  const rows = records.map((record) => {
     const hours = attendanceHours(record);
     return `
       <tr>
@@ -2556,7 +2577,11 @@ function attendancePayrollTracker() {
         <td>${badge(record.clockOutAt ? "completed" : "active")}</td>
       </tr>
     `;
-  }));
+  });
+  if (records.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="5">Total</td><td class="num">${records.reduce((sum, record) => sum + Number(attendanceHours(record).regular || 0), 0).toFixed(2)}</td><td class="num">${records.reduce((sum, record) => sum + Number(attendanceHours(record).overtime || 0), 0).toFixed(2)}</td><td></td></tr>`);
+  }
+  return reportSheetTable(["Date", "Employee", "Branch", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status"], rows);
 }
 
 const payrollIncomeFields = ["basicPay", "adjustment", "nightDiffAmount", "overtimeAmount", "restDayAmount", "specialHolidayAmount", "regularHolidayAmount", "taxableAllowance", "incentives", "commission", "transpoAllowance", "clothingAllowance", "mealAllowance", "nta", "bonus"];
@@ -2837,13 +2862,13 @@ function branchesView() {
       ${branchForm(editingBranch)}
       <div class="panel">
         <div class="panel-head"><h3>Locations</h3></div>
-        ${table(["Action", "Code", "Location", "Address", "Contact", "Status"], state.branches.map((branch) => `
+        ${reportSheetTable(["Action", "Code", "Location", "Address", "Contact", "Status"], state.branches.map((branch) => `
           <tr class="${state.editingBranchId === branch.id ? "row-editing" : ""}">
             <td><button class="btn secondary" data-edit-branch="${branch.id}">Edit</button> <button class="btn danger" data-delete-branch="${branch.id}">Delete</button></td>
-            <td>${branch.code}</td>
-            <td>${branch.name}</td>
-            <td>${branch.address || ""}</td>
-            <td>${branch.contact || ""}</td>
+            <td>${escapeHtml(branch.code)}</td>
+            <td>${escapeHtml(branch.name)}</td>
+            <td>${escapeHtml(branch.address || "")}</td>
+            <td>${escapeHtml(branch.contact || "")}</td>
             <td>${badge(branch.status)}</td>
           </tr>
         `))}
@@ -2880,14 +2905,14 @@ function destinationsView() {
       ${destinationForm(editingDestination)}
       <div class="panel">
         <div class="panel-head"><h3>Destinations</h3></div>
-        ${table(["Action", "Type", "Destination", "Contact", "Address", "Notes", "Status"], (state.destinations || []).map((destination) => `
+        ${reportSheetTable(["Action", "Type", "Destination", "Contact", "Address", "Notes", "Status"], (state.destinations || []).map((destination) => `
           <tr class="${state.editingDestinationId === destination.id ? "row-editing" : ""}">
             <td><button class="btn secondary" data-edit-destination="${destination.id}">Edit</button> <button class="btn danger" data-delete-destination="${destination.id}">Delete</button></td>
             <td>${badge(destination.type)}</td>
-            <td>${destination.name}</td>
-            <td>${destination.contact || ""}</td>
-            <td>${destination.address || ""}</td>
-            <td>${destination.notes || ""}</td>
+            <td>${escapeHtml(destination.name)}</td>
+            <td>${escapeHtml(destination.contact || "")}</td>
+            <td>${escapeHtml(destination.address || "")}</td>
+            <td>${escapeHtml(destination.notes || "")}</td>
             <td>${badge(destination.status)}</td>
           </tr>
         `))}
@@ -3018,13 +3043,73 @@ function destinationSelect(selectedValue = "") {
   return `<label>Destination<select name="destinationKey" required><option value="">Select destination</option>${options.map(([value, text]) => `<option value="${value}" ${selectedValue === value ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
 }
 
-function materialSelect(name, selectedValue = "", required = true) {
+function materialSelect(name, selectedValue = "", required = true, allowQuickAdd = false) {
   const blank = required ? "" : `<option value="">No material</option>`;
-  return `<label>Scrap material<select name="${name}" ${required ? "required" : ""}>${blank}${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select></label>`;
+  return `
+    <label>Scrap material
+      <span class="inline-field-action">
+        <select name="${name}" ${required ? "required" : ""}>${blank}${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select>
+        ${allowQuickAdd ? `<button class="btn secondary" type="button" data-quick-add-material>Add</button>` : ""}
+      </span>
+    </label>
+  `;
 }
 
 function inlineMaterialSelect(name, selectedValue = "") {
   return `<select name="${name}" required>${state.materials.filter((material) => material.status === "active").map((material) => `<option value="${material.id}" ${selectedValue === material.id ? "selected" : ""}>${material.name}</option>`).join("")}</select>`;
+}
+
+function quickAddMaterial(button) {
+  const form = button.closest("form");
+  const selectField = form?.elements.namedItem("materialId");
+  const name = prompt("New scrap material name");
+  if (name === null) return;
+  const materialNameValue = name.trim();
+  if (!materialNameValue) {
+    alert("Material name is required.");
+    return;
+  }
+  const existing = state.materials.find((material) => material.name.trim().toLowerCase() === materialNameValue.toLowerCase());
+  if (existing) {
+    if (selectField) selectField.value = existing.id;
+    alert(`${existing.name} already exists and was selected.`);
+    return;
+  }
+  const buyPrice = promptNumber("Buying price per kilo", 0);
+  if (buyPrice === null) return;
+  const sellPrice = promptNumber("Selling price per kilo", buyPrice);
+  if (sellPrice === null) return;
+  const material = {
+    id: id("m"),
+    name: materialNameValue,
+    category: "Scrap",
+    buyPrice,
+    sellPrice,
+    unit: "kilo",
+    status: "active",
+  };
+  state.materials.push(material);
+  state.priceHistory.push({ id: id("ph"), materialId: material.id, date: today(), buyPrice, sellPrice, changedBy: currentUser().id });
+  saveState();
+  if (selectField) {
+    const option = document.createElement("option");
+    option.value = material.id;
+    option.textContent = material.name;
+    selectField.appendChild(option);
+    selectField.value = material.id;
+  } else {
+    render();
+  }
+}
+
+function promptNumber(label, defaultValue = 0) {
+  while (true) {
+    const value = prompt(label, String(defaultValue ?? 0));
+    if (value === null) return null;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    alert(`${label} must be zero or higher.`);
+  }
 }
 
 function employeeSelect(name, selectedValue = "") {
@@ -3097,6 +3182,10 @@ function bindEvents() {
     saveState();
     render();
   }));
+
+  document.querySelectorAll("[data-quick-add-material]").forEach((button) => {
+    button.addEventListener("click", () => quickAddMaterial(button));
+  });
 
   document.querySelectorAll("[data-modal='adjustment']").forEach((button) => button.addEventListener("click", () => {
     document.getElementById("adjustment-panel")?.classList.toggle("hidden");

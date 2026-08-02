@@ -37,6 +37,18 @@ button {
   cursor: pointer;
 }
 
+.inline-field-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.inline-field-action .btn {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 .login-page {
   min-height: 100vh;
   display: block;
@@ -1984,16 +1996,25 @@ th {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  padding: 4px 0;
 }
 
 .customer-head h3 {
   margin: 0 0 3px;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .customer-head small {
   color: var(--muted);
   font-weight: 750;
+}
+
+.customer-group .report-sheet .table-wrap {
+  max-height: 34vh;
+}
+
+.customer-group .report-sheet table {
+  min-width: 960px;
 }
 
 .payslip-grid {
