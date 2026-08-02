@@ -169,7 +169,7 @@ const seedState = {
   activeView: "dashboard",
   language: "en",
   reportFilters: { from: "", to: "", branchId: "all" },
-  reportTab: "summary",
+  reportTab: "transactions",
   transactionTab: "walk_in",
   inventoryFilters: { materialId: "all", branchId: "all" },
   inventoryTab: "position",
@@ -2686,12 +2686,15 @@ function reportsView() {
   const transactions = filteredReportTransactions();
   const sales = transactions.filter((tx) => tx.type === "sale");
   const purchases = transactions.filter((tx) => tx.type === "purchase");
+  const pending = transactions.filter((tx) => Number(tx.balance || 0) > 0);
   const profitRows = sales.map((tx) => {
     const material = state.materials.find((item) => item.id === tx.materialId);
     const cost = tx.weight * (material?.buyPrice || 0);
     return { ...tx, cost, profit: tx.total - cost };
   });
-  const activeTab = state.reportTab || "summary";
+  const deliveries = filteredReportDeliveries();
+  const reportTabs = ["transactions", "purchases", "sales", "pending", "profit", "deliveries"];
+  const activeTab = reportTabs.includes(state.reportTab) ? state.reportTab : "transactions";
 
   return page("Reports", "Filter by date, export operational reports, and restrict income reports to admin users.", `
     <section class="grid">
@@ -2708,18 +2711,20 @@ function reportsView() {
       </div>
       <div class="panel">
         <div class="panel-head"><h3>Report results</h3><span class="mini-label">${transactions.length} filtered transaction${transactions.length === 1 ? "" : "s"}</span></div>
-        <div class="tab-row">
-          ${reportTabButton("summary", "Summary", activeTab)}
+        <div class="tab-row report-tab-row">
+          ${reportTabButton("transactions", "Transactions", activeTab)}
           ${reportTabButton("purchases", "Purchases", activeTab)}
           ${reportTabButton("sales", "Sales", activeTab)}
-          ${reportTabButton("inventory", "Inventory", activeTab)}
-          ${reportTabButton("income", "Income / Profit", activeTab)}
+          ${reportTabButton("pending", "Pending", activeTab)}
+          ${reportTabButton("profit", "Profit", activeTab)}
+          ${reportTabButton("deliveries", "Deliveries", activeTab)}
         </div>
-        ${activeTab === "summary" ? reportSummaryTab(transactions, purchases, sales, profitRows) : ""}
+        ${activeTab === "transactions" ? reportTransactionsTab(transactions) : ""}
         ${activeTab === "purchases" ? reportPurchasesTab(purchases) : ""}
         ${activeTab === "sales" ? reportSalesTab(sales) : ""}
-        ${activeTab === "inventory" ? reportInventoryTab() : ""}
-        ${activeTab === "income" ? reportIncomeTab(profitRows) : ""}
+        ${activeTab === "pending" ? reportPendingTab(pending) : ""}
+        ${activeTab === "profit" ? reportProfitTab(profitRows) : ""}
+        ${activeTab === "deliveries" ? reportDeliveriesTab(deliveries) : ""}
       </div>
     </section>
   `);
@@ -2729,24 +2734,11 @@ function reportTabButton(tab, label, activeTab) {
   return `<button class="${activeTab === tab ? "active" : ""}" data-report-tab="${tab}">${label}</button>`;
 }
 
-function reportSummaryTab(transactions, purchases, sales, profitRows) {
-  const totalPurchases = totalByType(purchases, "purchase");
-  const totalSales = totalByType(sales, "sale");
-  const totalProfit = profitRows.reduce((sum, row) => sum + Number(row.profit || 0), 0);
-  const pending = transactions.reduce((sum, tx) => sum + Number(tx.balance || 0), 0);
+function reportTransactionsTab(transactions) {
   return `
-    <div class="report-summary-grid">
-      ${reportSummaryCard("Transactions", transactions.length, "Filtered records")}
-      ${reportSummaryCard("Purchases", money(totalPurchases), `${kg(weightByType(purchases, "purchase"))} bought`)}
-      ${reportSummaryCard("Sales", money(totalSales), `${kg(weightByType(sales, "sale"))} sold`)}
-      ${reportSummaryCard("Pending", money(pending), "Open balances")}
-      ${isAdmin() ? reportSummaryCard("Profit", money(totalProfit), "Admin income view") : reportSummaryCard("Profit", "Restricted", "Admin only")}
-    </div>
+    <div class="panel-head inner-head"><h3>Transactions</h3><button class="btn secondary" data-export="transactions">Export CSV</button></div>
+    ${transactionReportTable(transactions)}
   `;
-}
-
-function reportSummaryCard(label, value, detail) {
-  return `<article class="report-summary-card"><span>${label}</span><strong>${value}</strong><small>${detail}</small></article>`;
 }
 
 function reportPurchasesTab(purchases) {
@@ -2763,27 +2755,52 @@ function reportSalesTab(sales) {
   `;
 }
 
-function reportInventoryTab() {
+function reportPendingTab(pending) {
   return `
-    <div class="panel-head inner-head"><h3>Inventory report</h3><button class="btn secondary" data-export="inventory">Export CSV</button></div>
-    ${stockTable()}
+    <div class="panel-head inner-head"><h3>Pending balances</h3><button class="btn secondary" data-export="pending">Export CSV</button></div>
+    ${transactionReportTable(pending)}
   `;
 }
 
-function reportIncomeTab(profitRows) {
+function reportProfitTab(profitRows) {
   if (!isAdmin()) return `<div class="notice">Income and profit reports are visible only to admin users.</div>`;
+  const rows = profitRows.map((tx) => `
+    <tr><td>${tx.date}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
+  `);
+  if (profitRows.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="5">Total</td><td class="amount">${money(profitRows.reduce((sum, tx) => sum + Number(tx.total || 0), 0))}</td><td class="amount">${money(profitRows.reduce((sum, tx) => sum + Number(tx.cost || 0), 0))}</td><td class="amount">${money(profitRows.reduce((sum, tx) => sum + Number(tx.profit || 0), 0))}</td></tr>`);
+  }
   return `
-    <div class="panel-head inner-head"><h3>Income and profit report</h3><button class="btn secondary" data-export="income">Export CSV</button></div>
-    ${table(["Date", "Material", "Sales", "Estimated Cost", "Profit"], profitRows.map((tx) => `
-      <tr><td>${tx.date}</td><td>${materialName(tx.materialId)}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.cost)}</td><td class="amount">${money(tx.profit)}</td></tr>
-    `))}
+    <div class="panel-head inner-head"><h3>Profit</h3><button class="btn secondary" data-export="profit">Export CSV</button></div>
+    ${reportSheetTable(["Date", "Receipt No.", "Name", "Material", "Weight", "Sales", "Estimated Cost", "Profit"], rows)}
   `;
 }
 
 function transactionReportTable(rows) {
-  return table(["Date", "Receipt No.", "Name", "Material", "Weight", "Price", "Demand Price", "Total", "Payment"], rows.map((tx) => `
-    <tr><td>${tx.date}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td>${badge(tx.paymentStatus)}</td></tr>
-  `));
+  const tableRows = rows.map((tx) => `
+    <tr><td>${tx.date}</td><td>${tx.number}</td><td>${escapeHtml(tx.receiptNumber || "-")}</td><td>${badge(tx.type)}</td><td>${partyName(tx.partyId)}</td><td>${materialName(tx.materialId)}</td><td>${branchName(tx.branchId)}</td><td class="num">${kg(tx.weight)}</td><td class="amount">${money(tx.basePrice ?? tx.price)}</td><td class="amount">${hasDemandPrice(tx.demandPrice) ? money(tx.demandPrice) : "-"}</td><td class="amount">${money(tx.total)}</td><td class="amount">${money(tx.paid)}</td><td class="amount">${money(tx.balance)}</td><td>${badge(tx.paymentStatus)}</td></tr>
+  `);
+  if (rows.length) {
+    tableRows.push(`<tr class="report-total-row"><td colspan="7">Total</td><td class="num">${kg(rows.reduce((sum, tx) => sum + Number(tx.weight || 0), 0))}</td><td></td><td></td><td class="amount">${money(rows.reduce((sum, tx) => sum + Number(tx.total || 0), 0))}</td><td class="amount">${money(rows.reduce((sum, tx) => sum + Number(tx.paid || 0), 0))}</td><td class="amount">${money(rows.reduce((sum, tx) => sum + Number(tx.balance || 0), 0))}</td><td></td></tr>`);
+  }
+  return reportSheetTable(["Date", "No.", "Receipt No.", "Type", "Name", "Material", "Branch", "Weight", "Price", "Demand Price", "Total", "Paid", "Balance", "Payment"], tableRows);
+}
+
+function reportDeliveriesTab(deliveries) {
+  const rows = deliveries.map((row) => `
+    <tr><td>${row.deliveryNumber}</td><td>${row.date}</td><td>${row.destination}</td><td>${row.truck}</td><td>${row.driver}</td><td>${row.operator}</td><td>${row.material}</td><td class="num">${kg(row.loadedWeightKg)}</td><td class="num">${row.deliveredWeightKg === "" ? "-" : kg(row.deliveredWeightKg)}</td><td class="num">${row.discrepancyKg === "" ? "-" : kg(row.discrepancyKg)}</td><td class="amount">${row.calculatedLoss === "" ? "-" : money(row.calculatedLoss)}</td><td class="amount">${money(row.estimatedValue)}</td><td class="amount">${money(row.actualSoldCost)}</td><td>${badge(row.status)}</td><td>${escapeHtml(row.notes || "")}</td></tr>
+  `);
+  if (deliveries.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="7">Total</td><td class="num">${kg(deliveries.reduce((sum, row) => sum + Number(row.loadedWeightKg || 0), 0))}</td><td class="num">${kg(deliveries.reduce((sum, row) => sum + Number(row.deliveredWeightKg || 0), 0))}</td><td></td><td class="amount">${money(deliveries.reduce((sum, row) => sum + Number(row.calculatedLoss || 0), 0))}</td><td class="amount">${money(deliveries.reduce((sum, row) => sum + Number(row.estimatedValue || 0), 0))}</td><td class="amount">${money(deliveries.reduce((sum, row) => sum + Number(row.actualSoldCost || 0), 0))}</td><td></td><td></td></tr>`);
+  }
+  return `
+    <div class="panel-head inner-head"><h3>Deliveries</h3><button class="btn secondary" data-export="deliveries">Export CSV</button></div>
+    ${reportSheetTable(["Delivery No.", "Date", "Destination", "Truck", "Driver", "Operator", "Material", "Loaded", "Delivered", "Discrepancy", "Calculated Loss", "Estimated Value", "Actual Sold Cost", "Status", "Notes"], rows)}
+  `;
+}
+
+function reportSheetTable(headers, rows) {
+  return `<div class="report-sheet">${table(headers, rows)}</div>`;
 }
 
 function filteredReportTransactions() {
@@ -2793,6 +2810,19 @@ function filteredReportTransactions() {
     const beforeTo = !filters.to || tx.date <= filters.to;
     const inBranch = filters.branchId === "all" || tx.branchId === filters.branchId;
     return afterFrom && beforeTo && inBranch;
+  });
+}
+
+function filteredReportDeliveries() {
+  const filters = state.reportFilters || { from: "", to: "", branchId: defaultBranchId() };
+  const visibleBranchIds = visibleBranches().map((branch) => branch.id);
+  return deliveryRecordRows().filter((row) => {
+    const afterFrom = !filters.from || row.date >= filters.from;
+    const beforeTo = !filters.to || row.date <= filters.to;
+    const delivery = state.deliveries.find((item) => item.number === row.deliveryNumber);
+    const visible = visibleBranchIds.includes(delivery?.sourceBranchId) || visibleBranchIds.includes(delivery?.destinationBranchId);
+    const inBranch = filters.branchId === "all" || delivery?.sourceBranchId === filters.branchId || delivery?.destinationBranchId === filters.branchId;
+    return afterFrom && beforeTo && visible && inBranch;
   });
 }
 
@@ -4483,18 +4513,23 @@ function deleteUser(userId) {
 function exportCsv(type) {
   const reportTransactions = filteredReportTransactions();
   const datasets = {
-    transactions: branchFilter(state.transactions),
+    transactions: reportTransactions,
     purchases: reportTransactions.filter((tx) => tx.type === "purchase"),
     sales: reportTransactions.filter((tx) => tx.type === "sale"),
-    deliveries: deliveryRecordRows(),
+    pending: reportTransactions.filter((tx) => Number(tx.balance || 0) > 0),
+    deliveries: filteredReportDeliveries(),
     payroll: payrollExportRows(),
     inventory: inventoryRows(),
     income: reportTransactions.filter((tx) => tx.type === "sale").map((tx) => {
       const material = state.materials.find((item) => item.id === tx.materialId);
       return { date: tx.date, material: materialName(tx.materialId), sales: tx.total, cost: tx.weight * (material?.buyPrice || 0), profit: tx.total - tx.weight * (material?.buyPrice || 0) };
     }),
+    profit: reportTransactions.filter((tx) => tx.type === "sale").map((tx) => {
+      const material = state.materials.find((item) => item.id === tx.materialId);
+      return { date: tx.date, receiptNumber: tx.receiptNumber || "", name: partyName(tx.partyId), material: materialName(tx.materialId), weight: tx.weight, sales: tx.total, estimatedCost: tx.weight * (material?.buyPrice || 0), profit: tx.total - tx.weight * (material?.buyPrice || 0) };
+    }),
   };
-  if (type === "income" && !isAdmin()) return;
+  if ((type === "income" || type === "profit") && !isAdmin()) return;
   const rows = datasets[type] || [];
   const csv = toCsv(rows);
   const blob = new Blob([csv], { type: "text/csv" });

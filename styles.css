@@ -677,6 +677,10 @@ button {
   --tab-color: #123862;
 }
 
+.tab-row button:nth-child(6) {
+  --tab-color: #16834f;
+}
+
 .tab-row button:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
@@ -688,6 +692,18 @@ button {
   outline: 3px solid rgba(22, 131, 79, 0.22);
   box-shadow: 0 10px 20px rgba(18, 56, 98, 0.2), inset 0 -4px 0 rgba(255, 255, 255, 0.28);
   transform: translateY(-1px);
+}
+
+.report-tab-row {
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 10px;
+}
+
+.report-tab-row button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .material-day-list {
@@ -785,6 +801,47 @@ button {
   color: var(--ink);
   font-size: 24px;
   line-height: 1.1;
+}
+
+.report-sheet {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.report-sheet .table-wrap {
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.report-sheet table {
+  min-width: 1120px;
+  font-size: 13px;
+}
+
+.report-sheet th,
+.report-sheet td {
+  padding: 8px 10px;
+  border-right: 1px solid #e7edf2;
+}
+
+.report-sheet th:last-child,
+.report-sheet td:last-child {
+  border-right: 0;
+}
+
+.report-sheet th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+tr.report-total-row td {
+  background: #f8fbfa;
+  border-top: 2px solid var(--accent);
+  color: var(--ink);
+  font-weight: 900;
 }
 
 .dashboard-hero {
