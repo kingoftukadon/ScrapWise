@@ -2270,7 +2270,7 @@ function deliveryLineInputs(delivery = null) {
 function partiesView() {
   const editingParty = state.parties.find((party) => party.id === state.editingPartyId) || null;
   return page("Customers/Suppliers", "Searchable master list for transaction history.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${partyForm(editingParty)}
       <div class="panel">
         <div class="toolbar"><input data-filter="party-search" placeholder="Search by name or contact"></div>
@@ -2311,7 +2311,7 @@ function partyTable(parties) {
 function materialsView() {
   const editingMaterial = state.materials.find((material) => material.id === state.editingMaterialId) || null;
   return page("Materials/Prices", "Admin-managed buying and selling prices. Transactions keep the price used at the time.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${materialForm(editingMaterial)}
       <div class="panel">
         <div class="panel-head"><h3>Material price list</h3></div>
@@ -2348,7 +2348,7 @@ function materialForm(material = null) {
 function employeesView() {
   const editingEmployee = state.employees.find((employee) => employee.id === state.editingEmployeeId) || null;
   return page("Employee Maintenance", "Maintain employee payroll details, government numbers, benefits, start date, and years of service.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${employeeForm(editingEmployee)}
       <div class="panel">
         <div class="panel-head"><h3>Employee records</h3></div>
@@ -2870,7 +2870,7 @@ function inventoryRows() {
 function branchesView() {
   const editingBranch = state.branches.find((branch) => branch.id === state.editingBranchId) || null;
   return page("Location Maintenance", "Maintain branches and operating locations for multi-branch ScrapWise setup.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${branchForm(editingBranch)}
       <div class="panel">
         <div class="panel-head"><h3>Locations</h3><span class="mini-label">${state.branches.length}/${LOCATION_LIMIT} locations</span></div>
@@ -2914,7 +2914,7 @@ function branchForm(branch = null) {
 function destinationsView() {
   const editingDestination = (state.destinations || []).find((destination) => destination.id === state.editingDestinationId) || null;
   return page("Destination Maintenance", "Maintain delivery and buyer contacts where scrap can be delivered or sold.", `
-    <section class="split">
+    <section class="split stacked-maintenance">
       ${destinationForm(editingDestination)}
       <div class="panel">
         <div class="panel-head"><h3>Destinations</h3></div>

@@ -1863,6 +1863,10 @@ th {
   gap: 14px;
 }
 
+.stacked-maintenance {
+  grid-template-columns: 1fr;
+}
+
 .cash-entry-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(240px, 1fr));
