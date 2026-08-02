@@ -289,11 +289,17 @@ function loadState() {
     cashAdvances: (parsed.cashAdvances || seedState.cashAdvances).map((advance) => {
       const amount = Number(advance.amount || 0);
       const inferredDeduction = Math.max(amount - Number(advance.balance || 0), 0);
-      const totalDeduction = advance.totalDeduction == null ? inferredDeduction : Number(advance.totalDeduction || 0);
+      let totalDeduction = advance.totalDeduction == null ? inferredDeduction : Number(advance.totalDeduction || 0);
+      let balance = Math.max(amount - totalDeduction, 0);
+      if (advance.balance != null) balance = Math.max(Number(advance.balance || 0), 0);
+      if (advance.status === "active" && amount > 0 && balance <= 0) {
+        totalDeduction = 0;
+        balance = amount;
+      }
       return {
         ...advance,
         totalDeduction,
-        balance: Math.max(amount - totalDeduction, 0),
+        balance,
       };
     }),
     parties: parsed.parties || seedState.parties,
@@ -2464,12 +2470,12 @@ function cashAdvanceForm(advance = null) {
 
 function cashAdvanceTable() {
   const rows = state.cashAdvances.map((advance) => `
-    <tr class="${state.editingCashAdvanceId === advance.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-cash-advance="${advance.id}">Edit</button></td><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
+    <tr class="${state.editingCashAdvanceId === advance.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-cash-advance="${advance.id}">Edit</button></td><td>${employeeName(advance.employeeId)}</td><td>${advance.date}</td><td class="amount">${money(advance.amount)}</td><td class="amount">${money(advance.totalDeduction)}</td><td class="amount">${money(advance.balance)}</td><td>${advance.reason}</td><td>${badge(advance.status)}</td></tr>
   `);
   if (state.cashAdvances.length) {
-    rows.push(`<tr class="report-total-row"><td colspan="3">Total</td><td class="amount">${money(state.cashAdvances.reduce((sum, advance) => sum + Number(advance.amount || 0), 0))}</td><td></td><td></td></tr>`);
+    rows.push(`<tr class="report-total-row"><td colspan="3">Total</td><td class="amount">${money(state.cashAdvances.reduce((sum, advance) => sum + Number(advance.amount || 0), 0))}</td><td class="amount">${money(state.cashAdvances.reduce((sum, advance) => sum + Number(advance.totalDeduction || 0), 0))}</td><td class="amount">${money(state.cashAdvances.reduce((sum, advance) => sum + Number(advance.balance || 0), 0))}</td><td></td><td></td></tr>`);
   }
-  return reportSheetTable(["Action", "Employee", "Date", "Amount", "Reason", "Status"], rows);
+  return reportSheetTable(["Action", "Employee", "Date", "Amount", "Deducted", "Balance", "Reason", "Status"], rows);
 }
 
 function payrollForm(run = null) {
@@ -2536,7 +2542,7 @@ function payrollForm(run = null) {
             ${payrollNumber("hdmfCalamityLoan", "HDMF calamity loan", run?.hdmfCalamityLoan)}
             ${payrollNumber("companyLoan", "Company loan", run?.companyLoan)}
             ${payrollNumber("tax", "Tax withheld/refund", run?.tax)}
-            ${payrollNumber("cashAdvanceDeduction", "Cash advance deduction", run?.cashAdvanceDeduction)}
+            ${payrollNumber("cashAdvanceDeduction", "Cash advance deduction this payday", run?.cashAdvanceDeduction)}
           </div>
         </div>
       </section>
@@ -2623,7 +2629,64 @@ function cashAdvanceDeductionFor(employeeId, periodStart, periodEnd) {
       && (!periodStart || advance.date >= periodStart)
       && (!periodEnd || advance.date <= periodEnd)
     ))
-    .reduce((sum, advance) => sum + Math.max(Number(advance.totalDeduction || 0), 0), 0);
+    .reduce((sum, advance) => sum + cashAdvanceBalance(advance), 0);
+}
+
+function cashAdvanceBalance(advance) {
+  const amount = Number(advance?.amount || 0);
+  if (advance?.balance != null) return Math.max(Number(advance.balance || 0), 0);
+  return Math.max(amount - Number(advance?.totalDeduction || 0), 0);
+}
+
+function restoreCashAdvanceApplications(run) {
+  (run?.cashAdvanceApplications || []).forEach((application) => {
+    const advance = state.cashAdvances.find((item) => item.id === application.advanceId);
+    if (!advance) return;
+    const restoredAmount = Number(application.amount || 0);
+    advance.totalDeduction = Math.max(Number(advance.totalDeduction || 0) - restoredAmount, 0);
+    advance.balance = Math.max(Number(advance.amount || 0) - advance.totalDeduction, 0);
+    if (advance.status === "fully_deducted" && advance.balance > 0) advance.status = "active";
+  });
+}
+
+function applyCashAdvanceApplications(run) {
+  const requestedDeduction = Number(run.cashAdvanceDeduction || 0);
+  let remainingDeduction = requestedDeduction;
+  const applications = [];
+  const advances = state.cashAdvances
+    .filter((advance) => (
+      advance.employeeId === run.employeeId
+      && advance.status === "active"
+      && (!run.periodStart || advance.date >= run.periodStart)
+      && (!run.periodEnd || advance.date <= run.periodEnd)
+    ))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  for (const advance of advances) {
+    if (remainingDeduction <= 0) break;
+    const balance = cashAdvanceBalance(advance);
+    const appliedAmount = Math.min(balance, remainingDeduction);
+    if (appliedAmount <= 0) continue;
+    advance.totalDeduction = Number(advance.totalDeduction || 0) + appliedAmount;
+    advance.balance = Math.max(Number(advance.amount || 0) - advance.totalDeduction, 0);
+    if (advance.balance <= 0) advance.status = "fully_deducted";
+    applications.push({ advanceId: advance.id, amount: appliedAmount });
+    remainingDeduction -= appliedAmount;
+  }
+
+  if (remainingDeduction > 0.009) {
+    applications.forEach((application) => {
+      const advance = state.cashAdvances.find((item) => item.id === application.advanceId);
+      if (!advance) return;
+      advance.totalDeduction = Math.max(Number(advance.totalDeduction || 0) - Number(application.amount || 0), 0);
+      advance.balance = Math.max(Number(advance.amount || 0) - advance.totalDeduction, 0);
+      if (advance.balance > 0) advance.status = "active";
+    });
+    alert(`Cash advance deduction cannot exceed the active balance. Available balance: ${money(requestedDeduction - remainingDeduction)}.`);
+    return null;
+  }
+
+  return applications;
 }
 
 function attendancePayrollTotals(employeeId, periodStart, periodEnd) {
@@ -2651,7 +2714,7 @@ function attendancePayrollTotals(employeeId, periodStart, periodEnd) {
   };
 }
 
-function applyAttendancePayrollCalculation(form) {
+function applyAttendancePayrollCalculation(form, sourceField = null) {
   const employeeId = form.elements.namedItem("employeeId")?.value || "";
   const employee = state.employees.find((item) => item.id === employeeId);
   const employeeRate = Number(employee?.rate || 0);
@@ -2659,23 +2722,27 @@ function applyAttendancePayrollCalculation(form) {
   const periodEnd = form.elements.namedItem("periodEnd")?.value || "";
   const totals = attendancePayrollTotals(employeeId, periodStart, periodEnd);
   const cashAdvanceDeduction = cashAdvanceDeductionFor(employeeId, periodStart, periodEnd);
+  const shouldRefreshPayrollDefaults = !sourceField || ["employeeId", "periodStart", "periodEnd"].includes(sourceField.name);
+  const isInitialEditRender = !sourceField && Boolean(form.elements.namedItem("id")?.value);
   const monthlySalary = form.elements.namedItem("monthlySalary");
   const basicPay = form.elements.namedItem("basicPay");
   const overtimeHours = form.elements.namedItem("overtimeHours");
   const overtimeAmount = form.elements.namedItem("overtimeAmount");
   const cashAdvanceDeductionField = form.elements.namedItem("cashAdvanceDeduction");
-  if (monthlySalary) monthlySalary.value = employeeRate.toFixed(2);
-  if (totals.records.length) {
-    if (basicPay) basicPay.value = totals.basicPay.toFixed(2);
-  } else if (basicPay) {
-    basicPay.value = employeeRate.toFixed(2);
+  if (shouldRefreshPayrollDefaults && !isInitialEditRender) {
+    if (monthlySalary) monthlySalary.value = employeeRate.toFixed(2);
+    if (totals.records.length) {
+      if (basicPay) basicPay.value = totals.basicPay.toFixed(2);
+    } else if (basicPay) {
+      basicPay.value = employeeRate.toFixed(2);
+    }
+    if (overtimeHours) overtimeHours.value = totals.overtimeHours.toFixed(2);
+    if (overtimeAmount) overtimeAmount.value = totals.overtimeAmount.toFixed(2);
+    if (cashAdvanceDeductionField) cashAdvanceDeductionField.value = cashAdvanceDeduction.toFixed(2);
   }
-  if (overtimeHours) overtimeHours.value = totals.overtimeHours.toFixed(2);
-  if (overtimeAmount) overtimeAmount.value = totals.overtimeAmount.toFixed(2);
-  if (cashAdvanceDeductionField) cashAdvanceDeductionField.value = cashAdvanceDeduction.toFixed(2);
   const summary = form.querySelector("[data-payroll-attendance-summary]");
   if (summary) {
-    summary.textContent = `Attendance payroll: ${totals.records.length} record${totals.records.length === 1 ? "" : "s"} | Regular ${totals.regularHours.toFixed(2)} hrs | Basic salary ${money(totals.basicPay)} | O.T ${totals.overtimeHours.toFixed(2)} hrs | O.T pay ${money(totals.overtimeAmount)} | Cash advance ${money(cashAdvanceDeduction)}`;
+    summary.textContent = `Attendance payroll: ${totals.records.length} record${totals.records.length === 1 ? "" : "s"} | Regular ${totals.regularHours.toFixed(2)} hrs | Basic salary ${money(totals.basicPay)} | O.T ${totals.overtimeHours.toFixed(2)} hrs | O.T pay ${money(totals.overtimeAmount)} | Cash advance balance ${money(cashAdvanceDeduction)} | This payday deduction ${money(Number(cashAdvanceDeductionField?.value || 0))}`;
   }
 }
 
@@ -3541,7 +3608,7 @@ function bindEvents() {
   });
 
   document.querySelectorAll("[data-payroll-form]").forEach((form) => {
-    const update = () => updatePayrollSummary(form);
+    const update = (event) => updatePayrollSummary(form, event?.target);
     form.querySelectorAll("input, select").forEach((field) => field.addEventListener("input", update));
     form.querySelectorAll("select").forEach((field) => field.addEventListener("change", update));
     updatePayrollSummary(form);
@@ -3794,8 +3861,8 @@ function updateDeliveryStockLimits(form, showAlert = false) {
   return !firstShortage;
 }
 
-function updatePayrollSummary(form) {
-  applyAttendancePayrollCalculation(form);
+function updatePayrollSummary(form, sourceField = null) {
+  applyAttendancePayrollCalculation(form, sourceField);
   const data = Object.fromEntries(new FormData(form));
   const totals = payrollTotals(payrollFormData(data, state.payrollRuns.find((run) => run.id === data.id)));
   const summary = form.querySelector("[data-payroll-summary]");
@@ -4484,10 +4551,19 @@ function addPayroll(data) {
     && (run.periodStart || "") === (data.periodStart || "")
     && (run.periodEnd || "") === (data.periodEnd || "")
   ));
+  const existingRun = existingIndex >= 0 ? state.payrollRuns[existingIndex] : null;
+  if (existingRun) restoreCashAdvanceApplications(existingRun);
+  const payrollRun = payrollFormData(data, existingRun);
+  const applications = applyCashAdvanceApplications(payrollRun);
+  if (!applications) {
+    if (existingRun) existingRun.cashAdvanceApplications = applyCashAdvanceApplications(existingRun) || existingRun.cashAdvanceApplications || [];
+    return;
+  }
+  payrollRun.cashAdvanceApplications = applications;
   if (existingIndex >= 0) {
-    state.payrollRuns[existingIndex] = payrollFormData(data, state.payrollRuns[existingIndex]);
+    state.payrollRuns[existingIndex] = payrollRun;
   } else {
-    state.payrollRuns.push(payrollFormData(data));
+    state.payrollRuns.push(payrollRun);
   }
   saveState();
   render();
@@ -4496,7 +4572,16 @@ function addPayroll(data) {
 function updatePayroll(data) {
   const index = state.payrollRuns.findIndex((run) => run.id === data.id);
   if (index === -1) return;
-  state.payrollRuns[index] = payrollFormData(data, state.payrollRuns[index]);
+  const existingRun = state.payrollRuns[index];
+  restoreCashAdvanceApplications(existingRun);
+  const payrollRun = payrollFormData(data, existingRun);
+  const applications = applyCashAdvanceApplications(payrollRun);
+  if (!applications) {
+    existingRun.cashAdvanceApplications = applyCashAdvanceApplications(existingRun) || existingRun.cashAdvanceApplications || [];
+    return;
+  }
+  payrollRun.cashAdvanceApplications = applications;
+  state.payrollRuns[index] = payrollRun;
   state.editingPayrollId = null;
   saveState();
   render();
@@ -4572,7 +4657,7 @@ function addCashAdvance(data) {
 function updateCashAdvance(data) {
   const index = state.cashAdvances.findIndex((advance) => advance.id === data.id);
   if (index === -1) return;
-  const values = cashAdvanceValues(data);
+  const values = cashAdvanceValues(data, state.cashAdvances[index]);
   if (!values) return;
   state.cashAdvances[index] = { ...state.cashAdvances[index], ...values };
   state.editingCashAdvanceId = null;
@@ -4581,13 +4666,13 @@ function updateCashAdvance(data) {
   render();
 }
 
-function cashAdvanceValues(data) {
+function cashAdvanceValues(data, existing = null) {
   const amount = Number(data.amount || 0);
   if (!Number.isFinite(amount) || amount <= 0) {
     alert("Cash advance blocked: amount must be greater than 0.");
     return null;
   }
-  const totalDeduction = amount;
+  const totalDeduction = data.status === "fully_deducted" ? amount : Math.min(Number(existing?.totalDeduction || 0), amount);
   return { employeeId: data.employeeId, date: data.date, amount, reason: data.reason, totalDeduction, balance: Math.max(amount - totalDeduction, 0), status: data.status };
 }
 
