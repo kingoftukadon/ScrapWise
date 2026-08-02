@@ -918,8 +918,8 @@ function attendanceView() {
       ${attendanceCashAdvancePanel(branchId, date, employees)}
       <div class="panel">
         <div class="panel-head"><h3>Employees in this branch</h3><span class="mini-label">${branchName(branchId)}</span></div>
-        ${table(["Employee", "Position", "Rate", "Status"], employees.map((employee) => `
-          <tr><td>${employee.name}</td><td>${employee.position}</td><td class="amount">${money(employee.rate)}</td><td>${attendanceStatusFor(employee.id, records)}</td></tr>
+        ${reportSheetTable(["Employee", "Position", "Rate", "Status"], employees.map((employee) => `
+          <tr><td>${escapeHtml(employee.name)}</td><td>${escapeHtml(employee.position)}</td><td class="amount">${money(employee.rate)}</td><td>${attendanceStatusFor(employee.id, records)}</td></tr>
         `))}
       </div>
       <div class="panel">
@@ -997,8 +997,8 @@ function attendanceCashAdvancePanel(branchId, date, employees) {
       <button class="btn" type="submit" style="margin-top:12px">Save cash advance</button>
       <div style="margin-top:14px">
         <div class="mini-label">Cash advances recorded today</div>
-        ${advances.length ? table(["Employee", "Amount", "Reason", "Status"], advances.map((advance) => `
-          <tr><td>${employeeName(advance.employeeId)}</td><td class="amount">${money(advance.amount)}</td><td>${advance.reason || ""}</td><td>${badge(advance.status)}</td></tr>
+        ${advances.length ? reportSheetTable(["Employee", "Amount", "Reason", "Status"], advances.map((advance) => `
+          <tr><td>${employeeName(advance.employeeId)}</td><td class="amount">${money(advance.amount)}</td><td>${escapeHtml(advance.reason || "")}</td><td>${badge(advance.status)}</td></tr>
         `)) : `<div class="notice">No cash advances recorded for this branch date.</div>`}
       </div>
     </form>
@@ -1035,7 +1035,7 @@ function cashOperationView() {
     <section class="grid">
       <div class="panel">
         <div class="panel-head"><h3>Cash Operation workspace</h3><span class="mini-label">${branchName(branchId)} - ${selectedDate}</span></div>
-        <div class="tab-row">
+        <div class="tab-row report-tab-row">
           ${cashOperationTabButton("starting", "Starting amount", activeTab)}
           ${cashOperationTabButton("paid_in", "Paid in", activeTab)}
           ${cashOperationTabButton("paid_out", "Paid out", activeTab)}
@@ -1062,9 +1062,13 @@ function cashOperationTabButton(tab, label, activeTab) {
 }
 
 function cashMovementHistoryTable(cashMovements) {
-  return table(["Date", "Type", "Amount", "Notes", "User"], cashMovements.slice().reverse().map((movement) => `
-    <tr><td>${movement.date}</td><td>${badge(movement.type)}</td><td class="amount">${money(movement.amount)}</td><td>${movement.notes || ""}</td><td>${operatorName(movement.createdBy)}</td></tr>
-  `));
+  const rows = cashMovements.slice().reverse().map((movement) => `
+    <tr><td>${movement.date}</td><td>${badge(movement.type)}</td><td class="amount">${money(movement.amount)}</td><td>${escapeHtml(movement.notes || "")}</td><td>${operatorName(movement.createdBy)}</td></tr>
+  `);
+  if (cashMovements.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="2">Total</td><td class="amount">${money(cashMovements.reduce((sum, movement) => sum + Number(movement.amount || 0), 0))}</td><td></td><td></td></tr>`);
+  }
+  return reportSheetTable(["Date", "Type", "Amount", "Notes", "User"], rows);
 }
 
 function emptyCashPosition() {
@@ -1156,11 +1160,11 @@ function cashSummaryRows(position) {
 }
 
 function cashOperationalHistory(branchId) {
-  const rows = state.dailyCapitals
+  const records = state.dailyCapitals
     .filter((record) => record.branchId === branchId)
     .slice()
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .map((record) => {
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const rows = records.map((record) => {
       const position = cashPosition(record.branchId, record.date);
       const status = record.status === "closed" || position.closeCash != null ? "closed" : "open";
       return `
@@ -1180,7 +1184,10 @@ function cashOperationalHistory(branchId) {
         </tr>
       `;
     });
-  return table(["Action", "Date", "Status", "Starting", "Paid in", "Paid out", "Sales cash", "Purchase cash", "Expected", "Ending", "Variance", "User"], rows);
+  if (records.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="3">Total</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).capital || 0), 0))}</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).paidIn || 0), 0))}</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).paidOut || 0), 0))}</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).cashReceived || 0), 0))}</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).cashSpent || 0), 0))}</td><td class="amount">${money(records.reduce((sum, record) => sum + Number(cashPosition(record.branchId, record.date).expectedCash || 0), 0))}</td><td></td><td></td><td></td></tr>`);
+  }
+  return reportSheetTable(["Action", "Date", "Status", "Starting", "Paid in", "Paid out", "Sales cash", "Purchase cash", "Expected", "Ending", "Variance", "User"], rows);
 }
 
 function reviewAttendanceView() {
@@ -1248,12 +1255,12 @@ function reviewAttendanceRows() {
 }
 
 function attendanceTable(records) {
-  return table(["Action", "Employee", "Branch", "Date", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status", "Notes"], records.slice().reverse().map((record) => {
+  const rows = records.slice().reverse().map((record) => {
     const hours = attendanceHours(record);
     return `
       <tr class="${state.editingAttendanceId === record.id ? "row-editing" : ""}">
         <td><button class="btn secondary" data-edit-attendance="${record.id}">Edit</button></td>
-        <td>${record.employeeName || employeeName(record.employeeId) || record.userName}</td>
+        <td>${escapeHtml(record.employeeName || employeeName(record.employeeId) || record.userName)}</td>
         <td>${branchName(record.branchId)}</td>
         <td>${record.date}</td>
         <td>${timeOnlyLabel(record.clockInAt)}</td>
@@ -1261,10 +1268,14 @@ function attendanceTable(records) {
         <td class="num">${hours.regular.toFixed(2)}</td>
         <td class="num">${hours.overtime.toFixed(2)}</td>
         <td>${badge(record.clockOutAt ? "completed" : "active")}</td>
-        <td>${record.notes || ""}</td>
+        <td>${escapeHtml(record.notes || "")}</td>
       </tr>
     `;
-  }));
+  });
+  if (records.length) {
+    rows.push(`<tr class="report-total-row"><td colspan="6">Total</td><td class="num">${records.reduce((sum, record) => sum + Number(attendanceHours(record).regular || 0), 0).toFixed(2)}</td><td class="num">${records.reduce((sum, record) => sum + Number(attendanceHours(record).overtime || 0), 0).toFixed(2)}</td><td></td><td></td></tr>`);
+  }
+  return reportSheetTable(["Action", "Employee", "Branch", "Date", "Time In", "Time Out", "Regular Hours", "O.T Hours", "Status", "Notes"], rows);
 }
 
 function activeAttendanceRecords() {
@@ -2949,8 +2960,9 @@ function usersView() {
     <section class="split">
       ${userForm(editingUser)}
       <div class="panel">
-        ${table(["Action", "Name", "Email", "Role", "Branch", "Status"], state.users.map((user) => `
-          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${user.name}</td><td>${user.email}</td><td>${roles[user.role]}</td><td>${branchName(user.branchId)}</td><td>${badge(user.status)}</td></tr>
+        <div class="panel-head"><h3>User records</h3></div>
+        ${reportSheetTable(["Action", "Name", "Email", "Role", "Branch", "Status"], state.users.map((user) => `
+          <tr class="${state.editingUserId === user.id ? "row-editing" : ""}"><td><button class="btn secondary" data-edit-user="${user.id}">Edit</button> <button class="btn danger" data-delete-user="${user.id}">Delete</button></td><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${roles[user.role]}</td><td>${branchName(user.branchId)}</td><td>${badge(user.status)}</td></tr>
         `))}
       </div>
     </section>
