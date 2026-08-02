@@ -19,7 +19,14 @@ Demo logins:
 - `index.html` - app entry point
 - `styles.css` - responsive operational UI
 - `app.js` - static single-page app logic and sample data
+- `schema.sql` - PostgreSQL/Supabase starter database schema for production
 
 ## Notes
 
 The local login is for MVP demonstration only. For production, move authentication to Supabase Auth or a server-side auth flow, store password hashes only, and enforce role restrictions with Row Level Security.
+
+Domain and hosting make the app reachable online, but they do not automatically
+replace the browser `localStorage` data. For production, create a PostgreSQL
+database using `schema.sql`, connect the app through a secure backend or
+Supabase client, then migrate the current read/write functions in `app.js` from
+`localStorage` to database calls.

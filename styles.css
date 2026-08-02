@@ -1604,6 +1604,19 @@ tr.row-editing td {
   background: #fff7df;
 }
 
+tr.inventory-total-row td {
+  background: #f8fbfa;
+  border-top: 2px solid var(--accent);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+tr.inventory-total-row td:nth-child(2) {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
 th {
   background: #eef3f5;
   color: #405160;

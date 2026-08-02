@@ -1977,7 +1977,11 @@ function inventoryTabButton(tab, label, activeTab) {
 }
 
 function inventoryStockPositionTab(filters) {
-  return table(["Material", "Current Stock", "Estimated Value", "Location"], stockPositionRows(filters).map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`));
+  const rows = stockPositionRows(filters);
+  const totalEstimatedValue = rows.reduce((sum, row) => sum + row.estimatedValue, 0);
+  const tableRows = rows.map((row) => `<tr><td>${row.material}</td><td class="num">${kg(row.currentStockKg)}</td><td class="amount">${money(row.estimatedValue)}</td><td>${row.location}</td></tr>`);
+  tableRows.push(`<tr class="inventory-total-row"><td></td><td>Total Estimated Value</td><td class="amount">${money(totalEstimatedValue)}</td><td></td></tr>`);
+  return table(["Material", "Current Stock", "Estimated Value", "Location"], tableRows);
 }
 
 function inventoryFilteredMovements(movements, filters) {
