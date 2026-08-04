@@ -1,4 +1,5 @@
-const STORAGE_KEY = "junkshop-mvp-state-v1";
+const STORAGE_KEY = "junkshop-live-fresh-state-v1";
+const LEGACY_STORAGE_KEYS = ["junkshop-mvp-state-v1"];
 const LOCATION_LIMIT = 3;
 
 const roles = {
@@ -9,7 +10,7 @@ const roles = {
 
 const translations = {
   fil: {
-    "ScrapWise": "ScrapWise",
+    "Jetplan Trading": "Jetplan Trading",
     "Turn every kilo into clear business insight.": "Gawing malinaw na business insight ang bawat kilo.",
     "Dashboard": "Dashboard",
     "Attendance": "Attendance",
@@ -25,7 +26,6 @@ const translations = {
     "Reports": "Reports",
     "Users": "Users",
     "Log out": "Mag-log out",
-    "Reset demo data": "I-reset ang demo data",
     "Good day": "Magandang araw",
     "Here is today's operations summary": "Narito ang buod ng operasyon ngayong araw",
     "Operational summary for branches, stock, payments, deliveries, and fast-moving materials.": "Buod ng operasyon para sa branch, stock, bayad, delivery, at mabilis maubos na materyales.",
@@ -201,61 +201,26 @@ const seedState = {
   reviewAttendanceFilters: { branchId: "all", from: monthStart(), to: today() },
   attendanceRecords: [],
   cashMovements: [],
-  dailyCapitals: [
-    { id: "cap1", date: today(), branchId: "b1", amount: 10000, notes: "Opening capital for today", createdBy: "u1" },
-  ],
-  branches: [
-    { id: "b1", name: "Main Yard", code: "MAIN", address: "National Road", contact: "0917 100 0001", status: "active" },
-    { id: "b2", name: "North Branch", code: "NORTH", address: "North Market", contact: "0917 100 0002", status: "active" },
-  ],
+  dailyCapitals: [],
+  branches: [],
   users: [
-    { id: "u1", name: "Admin User", email: "admin@junkshop.local", password: "admin123", role: "admin", branchId: "b1", status: "active" },
-    { id: "u2", name: "Main Staff", email: "staff@junkshop.local", password: "staff123", role: "staff", branchId: "b1", status: "active" },
-    { id: "u3", name: "Payroll Staff", email: "payroll@junkshop.local", password: "payroll123", role: "payroll", branchId: "b1", status: "active" },
+    { id: "u1", name: "Admin User", email: "admin@junkshop.local", password: "admin123", role: "admin", branchId: "", status: "active" },
+    { id: "u2", name: "Main Staff", email: "staff@junkshop.local", password: "staff123", role: "staff", branchId: "", status: "active" },
+    { id: "u3", name: "Payroll Staff", email: "payroll@junkshop.local", password: "payroll123", role: "payroll", branchId: "", status: "active" },
   ],
-  parties: [
-    { id: "walk-in", type: "supplier", name: "Walk In", contact: "", address: "", notes: "Default walk-in transaction contact", status: "active" },
-    { id: "p1", type: "supplier", name: "Mang Jun Scrap", contact: "0918 200 0011", address: "Poblacion", notes: "Regular seller", status: "active" },
-    { id: "p2", type: "customer", name: "Metro Recycling Buyer", contact: "0918 200 0012", address: "Industrial Zone", notes: "Bulk buyer", status: "active" },
-  ],
-  materials: [
-    { id: "m1", name: "Plastic", category: "Light scrap", buyPrice: 8, sellPrice: 12, unit: "kilo", status: "active" },
-    { id: "m2", name: "Copper", category: "Metal", buyPrice: 320, sellPrice: 370, unit: "kilo", status: "active" },
-    { id: "m3", name: "Carton", category: "Paper", buyPrice: 5, sellPrice: 7, unit: "kilo", status: "active" },
-    { id: "m4", name: "Iron", category: "Metal", buyPrice: 12, sellPrice: 17, unit: "kilo", status: "active" },
-  ],
+  parties: [],
+  materials: [],
   priceHistory: [],
-  transactions: [
-    { id: "t1", number: "TRX-0001", date: today(), branchId: "b1", type: "purchase", partyId: "p1", materialId: "m1", weight: 120, price: 8, basePrice: 8, demandPrice: "", total: 960, paymentStatus: "paid", paid: 960, balance: 0, notes: "Morning intake", createdBy: "u2" },
-    { id: "t2", number: "TRX-0002", date: today(), branchId: "b1", type: "sale", partyId: "p2", materialId: "m1", weight: 55, price: 12, basePrice: 12, demandPrice: "", total: 660, paymentStatus: "partial", paid: 400, balance: 260, notes: "Buyer pickup", createdBy: "u2" },
-    { id: "t3", number: "TRX-0003", date: today(), branchId: "b2", type: "purchase", partyId: "p1", materialId: "m2", weight: 18, price: 320, basePrice: 320, demandPrice: "", total: 5760, paymentStatus: "unpaid", paid: 0, balance: 5760, notes: "For sorting", createdBy: "u1" },
-  ],
-  stockMovements: [
-    { id: "s1", date: today(), branchId: "b1", materialId: "m1", type: "purchase_in", quantity: 120, reference: "TRX-0001", notes: "Auto from purchase", createdBy: "u2" },
-    { id: "s2", date: today(), branchId: "b1", materialId: "m1", type: "sale_out", quantity: -55, reference: "TRX-0002", notes: "Auto from sale", createdBy: "u2" },
-    { id: "s3", date: today(), branchId: "b2", materialId: "m2", type: "purchase_in", quantity: 18, reference: "TRX-0003", notes: "Auto from purchase", createdBy: "u1" },
-    { id: "s4", date: today(), branchId: "b1", materialId: "m1", type: "delivery_out", quantity: -20, reference: "DLV-0001", notes: "Auto from delivery", createdBy: "u2" },
-    { id: "s5", date: today(), branchId: "b1", materialId: "m3", type: "manual_adjustment", quantity: 40, reference: "OPENING", notes: "Opening stock", createdBy: "u1" },
-    { id: "s6", date: today(), branchId: "b1", materialId: "m3", type: "delivery_out", quantity: -12, reference: "DLV-0001", notes: "Auto from delivery", createdBy: "u2" },
-  ],
-  deliveries: [
-    { id: "d1", number: "DLV-0001", date: today(), sourceBranchId: "b1", destinationBranchId: "b2", destinationName: "", truck: "ABC 1234", driver: "R. Santos", status: "in_transit", notes: "Branch transfer", lines: [{ materialId: "m1", loadedWeight: 20, deliveredWeight: 0 }, { materialId: "m3", loadedWeight: 12, deliveredWeight: 0 }] },
-  ],
-  destinations: [
-    { id: "dst1", name: "Metro Recycling Buyer", type: "buyer", contact: "0918 200 0012", address: "Industrial Zone", notes: "External scrap buyer", status: "active" },
-    { id: "dst2", name: "Central Warehouse", type: "warehouse", contact: "0917 300 0001", address: "Central Processing Yard", notes: "Bulk delivery point", status: "active" },
-  ],
-  employees: [
-    { id: "e1", name: "Pedro Reyes", branchId: "b1", position: "Sorter", salaryType: "daily", rate: 550, sssNo: "34-1234567-8", pagibigNo: "1212-3456-7890", benefits: "Rice allowance, meal allowance", startDate: "2023-03-15", status: "active" },
-    { id: "e2", name: "Ana Cruz", branchId: "b2", position: "Cashier", salaryType: "monthly", rate: 18000, sssNo: "34-7654321-0", pagibigNo: "9876-5432-1011", benefits: "SSS, PhilHealth, Pag-IBIG", startDate: "2021-08-01", status: "active" },
-  ],
-  cashAdvances: [
-    { id: "ca1", employeeId: "e1", date: today(), amount: 1000, reason: "Emergency", totalDeduction: 400, balance: 600, status: "active" },
-  ],
-  payrollRuns: [
-    { id: "pr1", period: "2026-07-01 to 2026-07-15", employeeId: "e1", basicPay: 6600, benefits: 300, deductions: 200, cashAdvanceDeduction: 400, netPay: 6300, status: "approved" },
-  ],
+  transactions: [],
+  stockMovements: [],
+  deliveries: [],
+  destinations: [],
+  employees: [],
+  cashAdvances: [],
+  payrollRuns: [],
 };
+
+LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
 
 let state = loadState();
 
@@ -286,7 +251,7 @@ function loadState() {
     cashMovements: parsed.cashMovements || [],
     dailyCapitals: parsed.dailyCapitals || [],
     destinations: parsed.destinations || seedState.destinations,
-    cashAdvances: (parsed.cashAdvances || seedState.cashAdvances).map((advance) => {
+    cashAdvances: (parsed.cashAdvances ?? seedState.cashAdvances).map((advance) => {
       const amount = Number(advance.amount || 0);
       const inferredDeduction = Math.max(amount - Number(advance.balance || 0), 0);
       let totalDeduction = advance.totalDeduction == null ? inferredDeduction : Number(advance.totalDeduction || 0);
@@ -302,9 +267,9 @@ function loadState() {
         balance,
       };
     }),
-    parties: parsed.parties || seedState.parties,
-    transactions: parsed.transactions || seedState.transactions,
-    employees: (parsed.employees || seedState.employees).map((employee) => ({
+    parties: parsed.parties ?? seedState.parties,
+    transactions: parsed.transactions ?? seedState.transactions,
+    employees: (parsed.employees ?? seedState.employees).map((employee) => ({
       sssNo: "",
       pagibigNo: "",
       benefits: "",
@@ -315,7 +280,7 @@ function loadState() {
 }
 
 function normalizeState(nextState) {
-  const parties = ensureWalkInParty(nextState.parties || []);
+  const parties = nextState.parties || [];
   const walkInPartyId = parties.find((party) => party.status === "active" && party.name?.trim().toLowerCase() === "walk in")?.id || "";
   const receiptGroups = {};
   return {
@@ -349,15 +314,6 @@ function normalizeState(nextState) {
       };
     }),
   };
-}
-
-function ensureWalkInParty(parties = []) {
-  const hasWalkIn = parties.some((party) => party.id === "walk-in" || party.name?.trim().toLowerCase() === "walk in");
-  if (hasWalkIn) return parties;
-  return [
-    { id: "walk-in", type: "supplier", name: "Walk In", contact: "", address: "", notes: "Default walk-in transaction contact", status: "active" },
-    ...parties,
-  ];
 }
 
 function saveState() {
@@ -503,7 +459,7 @@ function loginView() {
     <section class="login-page">
       <div class="landing-wrap">
         <header class="landing-nav">
-          <div class="landing-brand"><span class="brand-logo hero-logo">SW</span><span><strong>ScrapWise</strong><small>Turn every kilo into clear business insight.</small></span></div>
+          <div class="landing-brand"><span class="brand-logo hero-logo">JT</span><span><strong>Jetplan Trading</strong><small>Turn every kilo into clear business insight.</small></span></div>
           <nav>
             <a href="#workflow">Workflow</a>
             <a href="#login">Login</a>
@@ -513,7 +469,7 @@ function loginView() {
           <section class="landing-copy">
             <span class="landing-kicker">Scraps inventory management</span>
             <h1>Control scrap buying, stock, deliveries, and payroll in one green workspace.</h1>
-            <p>ScrapWise gives junkshop teams a clear daily view of materials, cash, customers, branch movement, and employee records without jumping between spreadsheets.</p>
+            <p>Jetplan Trading gives junkshop teams a clear daily view of materials, cash, customers, branch movement, and employee records without jumping between spreadsheets.</p>
             <div class="landing-actions">
               <a href="#login" class="btn hero-btn">Open operations</a>
               <span>Built for focused junkshop operations</span>
@@ -541,9 +497,9 @@ function loginView() {
           <form class="login-panel" id="login" data-action="login">
             <span class="login-eyebrow">Secure access</span>
             <h2>Welcome back</h2>
-            <p>Sign in and ScrapWise will open the correct role access for admin, staff, or payroll users.</p>
-            <label>Email or username<input name="email" value="admin@junkshop.local" autocomplete="username" required></label>
-            <label>Password<input name="password" type="password" value="admin123" autocomplete="current-password" required></label>
+            <p>Sign in and Jetplan Trading will open the correct role access for admin, staff, or payroll users.</p>
+            <label>Email or username<input name="email" autocomplete="username" required></label>
+            <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
             <button class="btn" type="submit">Log in</button>
           </form>
         </div>
@@ -586,7 +542,7 @@ function shell(user) {
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-logo">JS</span>
-          <span><strong>${t("ScrapWise")}</strong><small>${t("Turn every kilo into clear business insight.")}</small></span>
+          <span><strong>${t("Jetplan Trading")}</strong><small>${t("Turn every kilo into clear business insight.")}</small></span>
         </div>
         <nav class="nav">
           ${views.map(([view, label]) => `<button data-view="${view}" class="${state.activeView === view ? "active" : ""}">${icon(navIcons[view])}<span>${t(label)}</span></button>`).join("")}
@@ -636,7 +592,6 @@ function page(title, subtitle, body) {
   return `
     <div class="topbar">
       <div><h2>${state.activeView === "dashboard" ? `${t("Good day")}, ${currentUser().name}!` : t(title)}</h2><p>${state.activeView === "dashboard" ? t("Here is today's operations summary") : t(subtitle)}</p></div>
-      <button class="btn secondary" data-action="reset-demo">${t("Reset demo data")}</button>
     </div>
     ${body}
   `;
@@ -656,7 +611,7 @@ function dashboardView() {
   return page("Dashboard", "Monthly and weekly KPI view for buying, selling, stock, deliveries, and cash.", `
     <section class="dashboard-hero inventory-hero">
       <div>
-        <span class="dash-eyebrow">ScrapWise inventory command center</span>
+        <span class="dash-eyebrow">Jetplan Trading inventory command center</span>
         <h1>Scraps Inventory Management</h1>
         <p>Generated from buying, selling, stock movement, and truck delivery records.</p>
         <div class="hero-flow">
@@ -1400,7 +1355,7 @@ function receiptHtml(transactions, receiptNumber = null) {
         </div>
         <section class="receipt">
           <div class="center">
-            <h1>ScrapWise</h1>
+            <h1>Jetplan Trading</h1>
             <div class="tagline">Turn every kilo into clear business insight.</div>
             <div class="muted">${escapeHtml(branch?.name || "Unknown branch")}</div>
             <div class="muted">${escapeHtml(branch?.address || "")}</div>
@@ -1513,7 +1468,7 @@ function deliveryReceiptHtml(delivery) {
         </div>
         <section class="receipt">
           <div class="center">
-            <h1>ScrapWise</h1>
+            <h1>Jetplan Trading</h1>
             <div class="tagline">Turn every kilo into clear business insight.</div>
             <div class="muted">${escapeHtml(branch?.name || "Main operation")}</div>
           </div>
@@ -1645,7 +1600,7 @@ function payrollReceiptHtml(run) {
         <section class="payslip">
           <div class="head">
             <div>
-              <h1>ScrapWise</h1>
+              <h1>Jetplan Trading</h1>
               <div class="muted">Turn every kilo into clear business insight.</div>
               <div class="muted">Operator: ${escapeHtml(operatorName(run.createdBy || run.updatedBy))}</div>
             </div>
@@ -1731,7 +1686,7 @@ function cashOperationReceiptHtml(branchId, date) {
         </div>
         <section class="receipt">
           <div class="center">
-            <h1>ScrapWise</h1>
+            <h1>Jetplan Trading</h1>
             <div class="tagline">Turn every kilo into clear business insight.</div>
             <div class="muted">${escapeHtml(branch?.name || "Unknown branch")}</div>
             <div class="muted">${escapeHtml(date)}</div>
@@ -2939,7 +2894,7 @@ function inventoryRows() {
 
 function branchesView() {
   const editingBranch = state.branches.find((branch) => branch.id === state.editingBranchId) || null;
-  return page("Location Maintenance", "Maintain branches and operating locations for multi-branch ScrapWise setup.", `
+  return page("Location Maintenance", "Maintain branches and operating locations for multi-branch Jetplan Trading setup.", `
     <section class="split stacked-maintenance">
       ${branchForm(editingBranch)}
       <div class="panel">
@@ -3053,9 +3008,9 @@ function userForm(user = null) {
       <div class="form-grid">
         ${input("name", "Name", "text", user?.name || "")}
         ${input("email", "Email or username", "email", user?.email || "")}
-        ${input("password", "Password", "password", user?.password || "")}
+        ${input("password", "Password", "text", user?.password || "")}
         ${select("role", [["staff", "Staff"], ["payroll", "Payroll/Admin Staff"], ["admin", "Admin"]], user?.role)}
-        ${branchSelect("branchId", "Branch", false, user?.branchId)}
+        ${branchSelect("branchId", "Branch", true, user?.branchId)}
         ${select("status", [["active", "Active"], ["inactive", "Inactive"]], user?.status)}
       </div>
       <button class="btn" type="submit" style="margin-top:12px">${user ? "Save changes" : "Save user"}</button>
@@ -3255,14 +3210,6 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='logout']").forEach((button) => button.addEventListener("click", () => {
     state.sessionUserId = null;
-    saveState();
-    render();
-  }));
-
-  document.querySelectorAll("[data-action='reset-demo']").forEach((button) => button.addEventListener("click", () => {
-    const keepUser = state.sessionUserId;
-    state = structuredClone(seedState);
-    state.sessionUserId = keepUser;
     saveState();
     render();
   }));
